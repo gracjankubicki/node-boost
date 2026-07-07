@@ -1,8 +1,10 @@
 node_modules/
 dist/
 coverage/
+implementation-plans/
 .DS_Store
 *.log
 .env
 .env.*
 !.env.example
+/.idea
