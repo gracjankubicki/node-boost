@@ -1,0 +1,41 @@
+{
+  "name": "node-boost",
+  "version": "0.1.0",
+  "description": "CLI and MCP guidance layer for Node/React projects.",
+  "type": "module",
+  "license": "MIT",
+  "author": "",
+  "bin": {
+    "node-boost": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "resources",
+    "schema.json",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "citty": "^0.1.6",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.0.0"
+  }
+}

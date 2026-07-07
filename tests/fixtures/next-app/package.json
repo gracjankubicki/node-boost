@@ -1,0 +1,15 @@
+{
+  "name": "fixture-next-app",
+  "private": true,
+  "packageManager": "npm@10.9.0",
+  "dependencies": {
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "tailwindcss": "^4.3.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.0"
+  }
+}
