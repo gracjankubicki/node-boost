@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { composeGuidelines } from "../../src/compose/guidelines.js";
 import { composeSkills } from "../../src/compose/skills.js";
 import { detectStack } from "../../src/detect/stack.js";
+import { buildInstallOperations } from "../../src/install/orchestrator.js";
+import type { NodeBoostConfig } from "../../src/config/schema.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -55,4 +57,50 @@ describe("resource composition", () => {
       "resources/react/skills/testing-frontend/SKILL.md",
     ]);
   });
+
+  it("snapshots composed .ai guidelines for Next and Vite fixtures", async () => {
+    const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
+
+    const nextGuidelines = await generatedGuidelines("next", nextStack, [
+      { name: "feature-modules", boundary: "forbid" },
+      "server-first-components",
+      "data-access-layer",
+      "typed-contracts",
+      "modern-typescript",
+    ]);
+    const viteGuidelines = await generatedGuidelines("vite-react", viteStack, [
+      { name: "feature-modules", boundary: "public-api" },
+      "data-access-layer",
+      "typed-contracts",
+      "state-management",
+      "modern-typescript",
+    ]);
+
+    expect(nextGuidelines).toMatchSnapshot();
+    expect(viteGuidelines).toMatchSnapshot();
+  });
 });
+
+async function generatedGuidelines(stackName: "next" | "vite-react", stack: Awaited<ReturnType<typeof detectStack>>, architectures: NodeBoostConfig["architectures"]): Promise<Record<string, string>> {
+  const operations = await buildInstallOperations({
+    packageRoot: repoRoot,
+    projectRoot: join(repoRoot, "tests", "fixtures", stackName === "next" ? "next-app" : "vite-app"),
+    stack,
+    config: {
+      version: 1,
+      generatedWith: "0.1.0",
+      stack: stackName,
+      agents: ["claude-code", "codex", "cursor"],
+      features: { guidelines: true, skills: true, mcp: true, architecture: true, hooks: false },
+      architectures,
+      audit: { exclude: [], rules: {}, ruleOptions: {} },
+    },
+  });
+
+  return Object.fromEntries(
+    operations
+      .filter((operation) => operation.path.startsWith(".ai/guidelines/"))
+      .map((operation) => [operation.path, operation.content]),
+  );
+}

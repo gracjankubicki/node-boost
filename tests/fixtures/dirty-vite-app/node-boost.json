@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "generatedWith": "0.1.0",
+  "stack": "vite-react",
+  "agents": ["claude-code", "codex", "cursor"],
+  "features": { "guidelines": true, "skills": true, "mcp": true, "architecture": true, "hooks": true },
+  "architectures": [
+    { "name": "feature-modules", "boundary": "public-api" },
+    "server-first-components",
+    "data-access-layer",
+    "typed-contracts",
+    "state-management",
+    "error-loading-boundaries",
+    "secure-by-default",
+    "modern-typescript"
+  ],
+  "audit": { "exclude": [], "rules": {}, "ruleOptions": {} }
+}

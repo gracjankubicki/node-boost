@@ -1,0 +1,716 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`resource composition > snapshots composed .ai guidelines for Next and Vite fixtures 1`] = `
+{
+  ".ai/guidelines/architectures/data-access-layer.md": "# Data Access Layer
+
+Components never call \`fetch\` directly. All data access lives in a dedicated layer: server functions in \`api/\` directories and client-side query hooks.
+
+## Server side (Next)
+
+<code-snippet name="Data layer function" lang="ts">
+// features/invoices/api/get-invoices.ts
+import "server-only"
+
+export async function getInvoices(filter: InvoiceFilter) {
+  "use cache"
+  const res = await apiClient.get("/invoices", { query: filter })
+  return invoiceListSchema.parse(res) // validate at the boundary (typed-contracts)
+}
+</code-snippet>
+
+Server Components call \`getInvoices()\`, not \`fetch\`. Auth headers, error handling, retries and cache tags live in one place. Mutations go through Server Actions (\`"use server"\`) that validate input and call the data layer.
+
+## Client side
+
+Components consume query hooks, never raw fetch:
+
+<code-snippet name="Query hook" lang="ts">
+// features/invoices/hooks/use-invoices.ts
+export function useInvoices(filter: InvoiceFilter) {
+  return useQuery({ queryKey: ["invoices", filter], queryFn: () => invoicesApi.list(filter) })
+}
+</code-snippet>
+
+Generated API clients (orval, openapi-typescript) **are** the data layer — use them instead of hand-writing one.
+
+## Rules
+
+- \`NB-ARCH-005\` (error): \`fetch\`/axios/ky in a client component outside the data layer and outside query hooks.
+- \`NB-ARCH-006\` (warn): raw \`fetch\` in a Server Component outside the data layer. Fetching directly in RSC is the framework idiom, but a layer keeps caching, headers and validation consistent — prefer it.
+- The layer's location is configurable via \`audit.ruleOptions\` (\`dataLayerGlobs\`, default \`**/api/**\`, \`**/server/**\`, \`lib/api/**\`, \`route.ts\`).
+
+## Anti-patterns
+
+- \`useEffect\` + \`useState\` + \`fetch\` in a component — that is a hand-rolled, worse react-query.
+- Copy-pasting auth headers per call site.
+- Mutations bypassing Server Actions / the API client, losing validation and cache invalidation.
+",
+  ".ai/guidelines/architectures/feature-modules.md": "# Feature Modules (forbid boundary)
+
+Organize code by feature. In this strict variant features are fully isolated: **no imports between features at all**. Shared code moves down to \`lib/\`/\`components/ui/\`; composite screens are assembled at the route level.
+
+## Structure
+
+<code-snippet name="Feature-first layout" lang="text">
+src/
+├── features/
+│   └── invoices/
+│       ├── api/
+│       ├── components/
+│       ├── hooks/
+│       ├── types.ts
+│       └── index.ts      # public API consumed ONLY by app/ routes
+├── components/ui/        # shared, domain-agnostic UI kit
+├── lib/                  # shared utilities, api client
+└── app/                  # routes — the ONLY place features are combined
+</code-snippet>
+
+## Boundary rules (enforced by node-boost audit)
+
+- \`NB-ARCH-001\` (error): **any** import from one feature into another is forbidden — including via \`index.ts\`.
+- \`NB-ARCH-002\` (error): a feature must never import from \`app/**\`. Dependency direction is \`shared → features → app\`.
+
+## How to work within the rules
+
+- Need feature B's component inside feature A's screen? Compose both in the route (\`app/\`), passing data via props.
+- Need feature B's types or helpers? Move them to \`lib/\` — if two features need it, it is shared by definition.
+- The payoff: zero dependency cycles, features are deletable and extractable wholesale, and every feature can be understood in isolation.
+
+## Anti-patterns
+
+- Smuggling cross-feature access through \`lib/\` wrappers that just re-export a feature's internals.
+- A giant "shared" dumping ground — \`lib/\` is for genuinely generic code, not a backdoor.
+- Deep relative paths that dodge aliases — the boundary applies regardless of import style.
+",
+  ".ai/guidelines/architectures/modern-typescript.md": "# Modern TypeScript
+
+The language contract for this codebase: strict compiler, no \`any\`, closed sets as unions, IDs as branded types.
+
+## Compiler
+
+\`strict: true\` is non-negotiable (\`NB-ARCH-013\`, warn). New projects also enable \`noUncheckedIndexedAccess\` and \`exactOptionalPropertyTypes\`.
+
+## No \`any\` — narrow \`unknown\`
+
+\`any\` switches the type checker off at every use site (\`NB-ARCH-014\`, warn). For data of unknown shape use \`unknown\` and narrow with guards or parse with zod (typed-contracts). Casting external data with \`as\` is the same lie with better manners.
+
+## Closed sets: discriminated unions + exhaustiveness
+
+<code-snippet name="Union with exhaustive switch" lang="ts">
+type PaymentState =
+  | { kind: "pending" }
+  | { kind: "paid"; paidAt: Date }
+  | { kind: "failed"; reason: string }
+
+function label(state: PaymentState): string {
+  switch (state.kind) {
+    case "pending": return "Pending"
+    case "paid":    return \`Paid \${state.paidAt.toLocaleDateString()}\`
+    case "failed":  return state.reason
+    default: { const _exhaustive: never = state; throw new Error("unreachable") }
+  }
+}
+// Adding { kind: "refunded" } breaks the build HERE — every switch is found for you.
+</code-snippet>
+
+Do not use TS \`enum\` — runtime quirks, poor tree-shaking. Closed value sets are const objects: \`const Role = { admin: "admin", user: "user" } as const; type Role = keyof typeof Role\`.
+
+## Branded types for identifiers
+
+<code-snippet name="IDs that cannot be swapped" lang="ts">
+type UserId = string & { readonly __brand: "UserId" }
+type InvoiceId = string & { readonly __brand: "InvoiceId" }
+// payInvoice(userId, invoiceId) with swapped args → compile error, not a prod bug
+</code-snippet>
+
+Zero runtime cost — compile-time value objects. Use for IDs and easily-confused scalars (amounts, emails).
+
+## Also
+
+- \`satisfies\` to type-check without widening: \`const config = {...} satisfies Config\`.
+- Prefer \`readonly\` arrays/fields on data that must not mutate.
+",
+  ".ai/guidelines/architectures/server-first-components.md": "# Server-First Components
+
+In the App Router, components are Server Components by default. Keep them that way: fetch data on the server, ship less JavaScript, and push \`"use client"\` down to interactive leaves.
+
+## Rules
+
+- Never put \`"use client"\` in \`page.tsx\` or \`layout.tsx\` (\`NB-ARCH-003\`, error). Route entries stay server-side; extract the interactive part into a leaf component instead.
+- Do not add \`"use client"\` to files with no hooks, event handlers, or browser APIs (\`NB-ARCH-004\`, warn) — the directive is not a talisman, it makes the whole subtree client-side.
+- A genuinely full-client page (canvas playground, embedded editor shell) is a documented exception: \`// nb-disable NB-ARCH-003 -- <reason>\`.
+
+<code-snippet name="Interactive leaf, server entry" lang="tsx">
+// app/invoices/page.tsx — Server Component: async, fetches data
+export default async function InvoicesPage() {
+  const invoices = await getInvoices()
+  return <InvoiceTable invoices={invoices} toolbar={<InvoiceFilter />} />
+}
+
+// features/invoices/components/InvoiceFilter.tsx — client leaf
+"use client"
+export function InvoiceFilter() {
+  const [query, setQuery] = useState("")
+  return <input value={query} onChange={(e) => setQuery(e.target.value)} />
+}
+</code-snippet>
+
+## Mental model
+
+\`"use client"\` marks a boundary, not a component: everything imported below it becomes client code. Server Components can render Client Components and pass serializable props (no functions, no class instances) — compose interactivity in, don't lift the whole page out.
+
+## Next 16 specifics
+
+- Nothing is cached by default; caching is explicit via \`"use cache"\` on components/functions — which only works if the tree stays server-first.
+- Partial Prerendering splits pages into a static shell plus dynamic holes in \`<Suspense>\`. A client-rooted page opts out of all of it.
+- Do not generate legacy idioms: \`getServerSideProps\`/\`getStaticProps\` belong to the Pages Router, not here.
+",
+  ".ai/guidelines/architectures/typed-contracts.md": "# Typed Contracts
+
+TypeScript types do not exist at runtime. Validate external data at the system's boundaries with zod, infer types from schemas, and trust types everywhere inside.
+
+## The boundaries (validate here, and only here)
+
+1. **API responses** — in the data layer: \`invoiceListSchema.parse(await res.json())\`. Exception: a generated client (orval/openapi-typescript) already carries the contract — do not double-validate.
+2. **User input** — forms (react-hook-form + zod resolver) and every Server Action (validate the payload first; a Server Action is a public endpoint).
+3. **Environment variables** — a single \`env.ts\` with a schema; crash at startup, not mid-request (\`NB-ARCH-008\`, warn, flags \`process.env.X\` elsewhere).
+4. **URL params** — \`searchParams\` are untrusted input like any query string.
+
+<code-snippet name="Schema as single source of truth" lang="ts">
+export const invoiceSchema = z.object({
+  id: z.string(),
+  amount: z.number(),
+  status: z.enum(["draft", "paid", "void"]),
+})
+export type Invoice = z.infer<typeof invoiceSchema> // type derives from schema — no duplication
+</code-snippet>
+
+## Rules
+
+- Never \`as Invoice\` on external data — a cast is a promise the runtime never checks. Parse it (\`NB-ARCH-007\`, warn, flags unvalidated \`res.json()\`/\`JSON.parse\` in the data layer).
+- One schema per contract; derive narrower views with \`.pick()\`/\`.omit()\` instead of re-declaring.
+- Form UX: validate on blur for fields, on submit for the whole form; reserve layout space for the error message so the layout does not jump.
+
+## Anti-patterns
+
+- **Zod fatigue**: re-parsing the same data in every component. Validate at the boundary; inside the app the type is the truth.
+- Hand-written interfaces duplicating a schema (they drift apart silently).
+- Mind the zod major in this project — zod 4 changed APIs (\`z.email()\` top-level, reworked error customization); follow the versioned zod guideline.
+",
+  ".ai/guidelines/core.md": "# Node Boost Core
+
+Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines/\` are composed from the packages actually installed — trust them over training-data habits, which are often a major version stale.
+
+## Working rules
+
+- Match the project's detected stack and versions (see the \`application_info\` MCP tool) before writing code; version-specific guidelines override generic knowledge.
+- Follow the enabled architecture guidelines (indexed in \`node-boost.md\`); the \`audit\`/\`guard\` commands enforce their rules (\`NB-ARCH-xxx\`). Use \`explain <ID>\` when a finding is unclear.
+- Suppressing a finding requires a reason: \`// nb-disable NB-ARCH-xxx -- <why>\`. Unreasoned suppressions are flagged.
+- After completing changes, run \`node-boost audit --changed\` (or rely on the installed Stop hook) and fix findings before handing back.
+
+## Repository hygiene
+
+- Do not leave dead code: unused exports, files and dependencies are context noise for both humans and agents. \`knip\` finds them — prefer removing over commenting out.
+- Keep \`node-boost.json\` and generated \`.ai/**\` files committed; regenerate with \`node-boost update\` after dependency upgrades (\`doctor\` detects drift).
+",
+  ".ai/guidelines/next/16.md": "# Next.js 16
+
+This project runs Next 16 — its caching model is **explicit**. Do not generate Next 13/14-era idioms.
+
+- Nothing is cached by default: pages are dynamic; opt in with the \`"use cache"\` directive at the function/component level, as close to the data as possible (usually in the data layer).
+- Control lifetimes with \`cacheLife()\` profiles; invalidate with \`revalidateTag()\`/\`updateTag()\` from Server Actions.
+- Partial Prerendering is the default model with cache components enabled: static shell + dynamic holes defined by \`<Suspense>\` boundaries — structure pages accordingly (see error-loading-boundaries).
+- \`params\` and \`searchParams\` in pages/layouts are **async** — \`await\` them.
+- Do NOT write: \`fetch(..., { next: { revalidate } })\` as the primary caching tool, \`export const revalidate\`, or \`unstable_cache\` — these are legacy patterns superseded by \`"use cache"\`.
+- Turbopack is the default bundler; do not add webpack-specific config unless the project already has it.
+
+<code-snippet name="Explicit caching in the data layer" lang="ts">
+export async function getInvoices() {
+  "use cache"
+  cacheLife("minutes")
+  return invoiceListSchema.parse(await apiClient.get("/invoices"))
+}
+</code-snippet>
+",
+  ".ai/guidelines/next/core.md": "# Next.js Core
+
+- App Router conventions: routes are folders; \`page.tsx\` renders, \`layout.tsx\` wraps, \`route.ts\` handles HTTP, \`loading.tsx\`/\`error.tsx\` are boundaries. Do not mix in Pages Router idioms (\`getServerSideProps\`, \`getStaticProps\`, \`_app.tsx\`) unless the project actually uses \`pages/\`.
+- Components are Server Components by default; \`"use client"\` only on interactive leaves (see server-first-components guideline).
+- Data flows through the data layer; mutations through Server Actions with auth + validation (see data-access-layer and secure-by-default).
+- Use the framework's primitives before reaching for libraries: \`next/image\` for images, \`next/font\` for fonts, \`next/link\` for navigation, Metadata API for \`<head>\`.
+- Route params and \`searchParams\` are untrusted input — validate before use.
+- Prefer \`redirect()\`/\`notFound()\` from the server over client-side workarounds.
+",
+  ".ai/guidelines/node-boost.md": "# node-boost guidelines
+
+## Stack
+
+- name: next
+- router: app
+- package manager: npm
+- linting: eslint-prettier
+
+## Packages
+
+- eslint: 10.6.0 (range)
+- next: 16.2.9 (range)
+- prettier: 3.6.2 (range)
+- react: 19.2.7 (range)
+- tailwindcss: 4.3.1 (range)
+- typescript: 5.9.3 (range)
+- vitest: 3.2.0 (range)
+- zod: 4.0.0 (range)
+
+## Architectures
+
+- feature-modules (forbid)
+- server-first-components
+- data-access-layer
+- typed-contracts
+- modern-typescript
+
+## Files
+
+- .ai/guidelines/architectures/data-access-layer.md: node-boost built-in
+- .ai/guidelines/architectures/feature-modules.md: node-boost built-in
+- .ai/guidelines/architectures/modern-typescript.md: node-boost built-in
+- .ai/guidelines/architectures/server-first-components.md: node-boost built-in
+- .ai/guidelines/architectures/typed-contracts.md: node-boost built-in
+- .ai/guidelines/core.md: node-boost built-in
+- .ai/guidelines/next/16.md: node-boost built-in
+- .ai/guidelines/next/core.md: node-boost built-in
+- .ai/guidelines/react/19.md: node-boost built-in
+- .ai/guidelines/react/core.md: node-boost built-in
+- .ai/guidelines/tailwindcss/4.md: node-boost built-in
+- .ai/guidelines/tailwindcss/core.md: node-boost built-in
+- .ai/guidelines/testing/vitest.md: node-boost built-in
+- .ai/guidelines/typescript/core.md: node-boost built-in
+- .ai/guidelines/zod/4.md: node-boost built-in
+- .ai/guidelines/zod/core.md: node-boost built-in
+",
+  ".ai/guidelines/react/19.md": "# React 19
+
+This project runs React 19 — several long-standing idioms are dead. Do not generate them.
+
+- \`ref\` is a regular prop: **no \`forwardRef\`**. \`function Input({ ref, ...props })\` just works.
+- React Compiler (1.0, stable) memoizes automatically: **no ritual \`useCallback\`/\`useMemo\`/\`React.memo\`** — use them only for referential guarantees (e.g. effect deps).
+- Actions are the mutation primitive: \`<form action={fn}>\`, \`useActionState\` for pending/error, \`useFormStatus\` inside forms, \`useOptimistic\` for instant feedback (see ui-states guideline).
+- \`use(promise)\` unwraps promises in render (with Suspense); \`use(Context)\` replaces \`useContext\` and may be called conditionally.
+- Metadata tags (\`<title>\`, \`<meta>\`) render from components and hoist automatically (in non-Next apps).
+- \`propTypes\` and \`defaultProps\` on function components are removed — TypeScript types and default parameters instead.
+",
+  ".ai/guidelines/react/core.md": "# React Core
+
+- Components are pure functions of props/state — side effects live in event handlers, the data layer, or (rarely) effects that sync with external systems.
+- Compute derived data during render; do not mirror props into state or chain \`useEffect\` + \`setState\` (see custom-hooks guideline).
+- Lists need stable \`key\`s from the data, never array indexes for dynamic lists.
+- Prefer composition (children/slots) over configuration props (see component-composition guideline).
+- Keep state close to where it is used; escalate deliberately (see state-management guideline).
+- Semantic HTML first: \`<button>\`, \`<a>\`, \`<label>\` — not clickable \`<div>\`s.
+- Follow the version-specific React guideline in this directory — React idioms shift across majors and training data lags behind.
+",
+  ".ai/guidelines/tailwindcss/4.md": "# Tailwind CSS 4
+
+This project runs Tailwind 4 — configuration is CSS-first. Do not generate v3 idioms.
+
+- **No \`tailwind.config.js\`.** Configuration lives in CSS: \`@import "tailwindcss"\` plus \`@theme { --color-brand: ...; }\` for tokens. Do not create a JS config file.
+- Theme tokens are CSS variables, usable directly (\`var(--color-brand)\`) and generating utilities automatically.
+- No \`content\` array to maintain — sources are auto-detected; no PostCSS \`autoprefixer\`/\`postcss-import\` boilerplate (built in via \`@tailwindcss/postcss\` or the Vite plugin).
+- v3 → v4 renames to respect: \`shadow-sm\` → \`shadow-xs\`, \`outline-none\` → \`outline-hidden\`, ring default width changed — check migrated class names rather than assuming v3 scales.
+- Custom utilities via \`@utility\`, plugins via \`@plugin\` — in CSS, not JS.
+",
+  ".ai/guidelines/tailwindcss/core.md": "# Tailwind CSS Core
+
+- Utility-first in JSX; reuse through React components, not through custom CSS classes. Keep \`@apply\` to a rare minimum.
+- Never construct class names dynamically (\`text-\${color}-500\`) — the compiler scans sources statically; interpolated classes silently don't exist. Map conditions to full literal class strings.
+- Use theme tokens for colors/spacing; arbitrary values (\`w-[347px]\`) are one-off exceptions with a reason.
+- Visual variants via \`cva\` + \`tailwind-merge\`; conditional classes via a \`cn()\` helper (see styling-tailwind guideline).
+- Keep class order consistent with the project's formatter (prettier-plugin-tailwindcss or Biome's sorting).
+- Follow the version-specific Tailwind guideline — configuration differs fundamentally between v3 and v4.
+",
+  ".ai/guidelines/testing/vitest.md": "# Vitest
+
+- Runner for unit and component tests; component tests use Testing Library + \`@testing-library/jest-dom\` matchers in a jsdom (or browser-mode) environment.
+- Test behavior through roles/labels; mock the network with MSW, never your own hooks/modules under test (see testing-strategy guideline).
+- Structure: \`describe\` per unit/feature, test names state observable behavior ("shows validation error when amount is empty").
+- Use \`vi.fn()\`/\`vi.spyOn\` for collaborator seams; avoid \`vi.mock\` of internal modules — it usually signals a missing seam.
+- Keep tests deterministic: fake timers for time-dependent logic (\`vi.useFakeTimers\`), no real network, no ordering dependence.
+- Run a focused file with \`vitest run <path>\`; the full gate is the project's \`npm test\`.
+",
+  ".ai/guidelines/typescript/core.md": "# TypeScript Core
+
+- \`strict: true\` is the floor; treat compiler errors as design feedback, not noise to cast away.
+- No \`any\` and no \`as\` on external data — \`unknown\` + narrowing, or a zod parse at the boundary (see typed-contracts and modern-typescript guidelines).
+- Model closed sets as discriminated unions or const objects (never \`enum\`); make switches exhaustive with a \`never\` check.
+- Derive types instead of duplicating them: \`z.infer\`, \`ReturnType\`, \`Pick\`/\`Omit\`, \`satisfies\` for literal checking.
+- Types live next to their domain (feature's \`types.ts\`); shared primitives (branded IDs) in \`lib/\`.
+",
+  ".ai/guidelines/zod/4.md": "# Zod 4
+
+This project runs zod 4 — several v3 idioms are gone or renamed. Do not generate v3 API.
+
+- String formats are top-level: \`z.email()\`, \`z.url()\`, \`z.uuid()\` — NOT \`z.string().email()\` (deprecated/removed in v4).
+- Error customization is unified under \`error\`: \`z.string({ error: "Required" })\`, \`.min(5, { error: "Too short" })\` — NOT \`message\`, \`required_error\`, \`invalid_type_error\`, or \`errorMap\`.
+- \`z.strictObject({...})\`/\`z.looseObject({...})\` replace \`.strict()\`/\`.passthrough()\` styles; default objects strip unknown keys.
+- Discriminated unions and recursive types are stronger — prefer \`z.discriminatedUnion\` for tagged payloads.
+- Need a slim client bundle? \`zod/mini\` exists (functional API) — only introduce it if the project already uses it.
+- Records: \`z.record(z.string(), valueSchema)\` requires the key schema explicitly.
+",
+  ".ai/guidelines/zod/core.md": "# Zod Core
+
+- Validate at system boundaries only: API responses (data layer), form/action input, env, URL params. Inside the app, the inferred type is the truth — no re-parsing (see typed-contracts guideline).
+- One schema per contract, types derived with \`z.infer\`; narrower views via \`.pick()\`/\`.omit()\`/\`.extend()\`, not re-declared interfaces.
+- \`.parse()\` when failure is a bug (throw), \`.safeParse()\` when failure is a flow (form input, external data you degrade gracefully on).
+- Keep schemas next to the data layer that uses them (\`features/<x>/api/schemas.ts\`).
+- Follow the version-specific zod guideline — the v3 → v4 API changed materially.
+",
+}
+`;
+
+exports[`resource composition > snapshots composed .ai guidelines for Next and Vite fixtures 2`] = `
+{
+  ".ai/guidelines/architectures/data-access-layer.md": "# Data Access Layer
+
+Components never call \`fetch\` directly. All data access lives in a dedicated layer: server functions in \`api/\` directories and client-side query hooks.
+
+## Server side (Next)
+
+<code-snippet name="Data layer function" lang="ts">
+// features/invoices/api/get-invoices.ts
+import "server-only"
+
+export async function getInvoices(filter: InvoiceFilter) {
+  "use cache"
+  const res = await apiClient.get("/invoices", { query: filter })
+  return invoiceListSchema.parse(res) // validate at the boundary (typed-contracts)
+}
+</code-snippet>
+
+Server Components call \`getInvoices()\`, not \`fetch\`. Auth headers, error handling, retries and cache tags live in one place. Mutations go through Server Actions (\`"use server"\`) that validate input and call the data layer.
+
+## Client side
+
+Components consume query hooks, never raw fetch:
+
+<code-snippet name="Query hook" lang="ts">
+// features/invoices/hooks/use-invoices.ts
+export function useInvoices(filter: InvoiceFilter) {
+  return useQuery({ queryKey: ["invoices", filter], queryFn: () => invoicesApi.list(filter) })
+}
+</code-snippet>
+
+Generated API clients (orval, openapi-typescript) **are** the data layer — use them instead of hand-writing one.
+
+## Rules
+
+- \`NB-ARCH-005\` (error): \`fetch\`/axios/ky in a client component outside the data layer and outside query hooks.
+- \`NB-ARCH-006\` (warn): raw \`fetch\` in a Server Component outside the data layer. Fetching directly in RSC is the framework idiom, but a layer keeps caching, headers and validation consistent — prefer it.
+- The layer's location is configurable via \`audit.ruleOptions\` (\`dataLayerGlobs\`, default \`**/api/**\`, \`**/server/**\`, \`lib/api/**\`, \`route.ts\`).
+
+## Anti-patterns
+
+- \`useEffect\` + \`useState\` + \`fetch\` in a component — that is a hand-rolled, worse react-query.
+- Copy-pasting auth headers per call site.
+- Mutations bypassing Server Actions / the API client, losing validation and cache invalidation.
+",
+  ".ai/guidelines/architectures/feature-modules.md": "# Feature Modules (public-api boundary)
+
+Organize code by feature. Each feature is a module with a public API in \`index.ts\`; cross-feature imports are allowed **only through that public API**.
+
+## Structure
+
+<code-snippet name="Feature-first layout" lang="text">
+src/
+├── features/
+│   └── invoices/
+│       ├── api/          # data access for this feature
+│       ├── components/
+│       ├── hooks/
+│       ├── types.ts
+│       └── index.ts      # PUBLIC API — the only cross-feature entry point
+├── components/ui/        # shared, domain-agnostic UI kit
+├── lib/                  # shared utilities, api client
+└── app/                  # routes — compose features, no business logic
+</code-snippet>
+
+## Boundary rules (enforced by node-boost audit)
+
+- \`NB-ARCH-001\` (error): importing another feature's internals is forbidden. \`import { CartSummary } from "@/features/cart"\` is fine; \`import { store } from "@/features/cart/internal/store"\` is not.
+- \`NB-ARCH-002\` (error): a feature must never import from \`app/**\`. Dependency direction is \`shared → features → app\`.
+
+## Conventions
+
+- Keep \`index.ts\` deliberately small — every export is a contract. If a feature's public API grows past ~10 exports, it is probably two features.
+- Shared code goes down to \`lib/\` or \`components/ui/\`, never sideways between features.
+- Watch for cycles: if feature A imports B and B imports A (even via \`index.ts\`), extract the shared piece to \`lib/\` or compose both at the route level.
+- Do not introduce \`features/\` prematurely — adopt it when a second feature starts bleeding into the first.
+
+## Anti-patterns
+
+- Re-exporting everything from \`index.ts\` "just in case" — large barrels hurt tree-shaking and make everything public.
+- "Shared" modules importing from features (upward dependency).
+- Deep relative paths (\`../../cart/...\`) that dodge the alias — the boundary applies regardless of import style.
+",
+  ".ai/guidelines/architectures/modern-typescript.md": "# Modern TypeScript
+
+The language contract for this codebase: strict compiler, no \`any\`, closed sets as unions, IDs as branded types.
+
+## Compiler
+
+\`strict: true\` is non-negotiable (\`NB-ARCH-013\`, warn). New projects also enable \`noUncheckedIndexedAccess\` and \`exactOptionalPropertyTypes\`.
+
+## No \`any\` — narrow \`unknown\`
+
+\`any\` switches the type checker off at every use site (\`NB-ARCH-014\`, warn). For data of unknown shape use \`unknown\` and narrow with guards or parse with zod (typed-contracts). Casting external data with \`as\` is the same lie with better manners.
+
+## Closed sets: discriminated unions + exhaustiveness
+
+<code-snippet name="Union with exhaustive switch" lang="ts">
+type PaymentState =
+  | { kind: "pending" }
+  | { kind: "paid"; paidAt: Date }
+  | { kind: "failed"; reason: string }
+
+function label(state: PaymentState): string {
+  switch (state.kind) {
+    case "pending": return "Pending"
+    case "paid":    return \`Paid \${state.paidAt.toLocaleDateString()}\`
+    case "failed":  return state.reason
+    default: { const _exhaustive: never = state; throw new Error("unreachable") }
+  }
+}
+// Adding { kind: "refunded" } breaks the build HERE — every switch is found for you.
+</code-snippet>
+
+Do not use TS \`enum\` — runtime quirks, poor tree-shaking. Closed value sets are const objects: \`const Role = { admin: "admin", user: "user" } as const; type Role = keyof typeof Role\`.
+
+## Branded types for identifiers
+
+<code-snippet name="IDs that cannot be swapped" lang="ts">
+type UserId = string & { readonly __brand: "UserId" }
+type InvoiceId = string & { readonly __brand: "InvoiceId" }
+// payInvoice(userId, invoiceId) with swapped args → compile error, not a prod bug
+</code-snippet>
+
+Zero runtime cost — compile-time value objects. Use for IDs and easily-confused scalars (amounts, emails).
+
+## Also
+
+- \`satisfies\` to type-check without widening: \`const config = {...} satisfies Config\`.
+- Prefer \`readonly\` arrays/fields on data that must not mutate.
+",
+  ".ai/guidelines/architectures/state-management.md": "# State Management
+
+Classify state before placing it. Each kind has exactly one correct home; most bugs come from putting server data in a client store.
+
+| Kind | Example | Home |
+|---|---|---|
+| Server state | invoices, users | react-query cache (or RSC props in Next) |
+| Local UI state | open modal, input value | \`useState\` in the component |
+| Shared client state | theme, sidebar, multi-step draft | Context (rare updates) / store like zustand (frequent) |
+| URL state | filters, pagination, active tab | \`searchParams\` |
+
+## The one big rule: server state is a cache, not state
+
+<code-snippet name="Anti-pattern: copying cache into a store" lang="ts">
+// WRONG — two sources of truth, manual sync, staleness bugs (NB-ARCH-009, warn)
+const invoices = await api.getInvoices()
+useInvoiceStore.setState({ invoices })
+</code-snippet>
+
+react-query already is the store for server data: keys, staleness, refetch, \`invalidateQueries\` after mutations. A client store holds only what the backend does not know (preferences, drafts, selections).
+
+## Escalation ladder
+
+\`useState\` → URL → Context → store. Escalate only when the level below fails. URL state is underused: filters and pagination in \`searchParams\` give deep links, back button and refresh survival for free.
+
+## Next specifics
+
+Server Components remove the need for much client state — data arriving as props needs no client cache. Keep react-query for interactive islands, not for whole server-rendered pages.
+
+## Anti-patterns
+
+- A global store as junk drawer (2016-Redux style).
+- Deriving state with \`useEffect\` + \`setState\` — compute it during render instead.
+- Duplicating URL state in a store and syncing by hand.
+",
+  ".ai/guidelines/architectures/typed-contracts.md": "# Typed Contracts
+
+TypeScript types do not exist at runtime. Validate external data at the system's boundaries with zod, infer types from schemas, and trust types everywhere inside.
+
+## The boundaries (validate here, and only here)
+
+1. **API responses** — in the data layer: \`invoiceListSchema.parse(await res.json())\`. Exception: a generated client (orval/openapi-typescript) already carries the contract — do not double-validate.
+2. **User input** — forms (react-hook-form + zod resolver) and every Server Action (validate the payload first; a Server Action is a public endpoint).
+3. **Environment variables** — a single \`env.ts\` with a schema; crash at startup, not mid-request (\`NB-ARCH-008\`, warn, flags \`process.env.X\` elsewhere).
+4. **URL params** — \`searchParams\` are untrusted input like any query string.
+
+<code-snippet name="Schema as single source of truth" lang="ts">
+export const invoiceSchema = z.object({
+  id: z.string(),
+  amount: z.number(),
+  status: z.enum(["draft", "paid", "void"]),
+})
+export type Invoice = z.infer<typeof invoiceSchema> // type derives from schema — no duplication
+</code-snippet>
+
+## Rules
+
+- Never \`as Invoice\` on external data — a cast is a promise the runtime never checks. Parse it (\`NB-ARCH-007\`, warn, flags unvalidated \`res.json()\`/\`JSON.parse\` in the data layer).
+- One schema per contract; derive narrower views with \`.pick()\`/\`.omit()\` instead of re-declaring.
+- Form UX: validate on blur for fields, on submit for the whole form; reserve layout space for the error message so the layout does not jump.
+
+## Anti-patterns
+
+- **Zod fatigue**: re-parsing the same data in every component. Validate at the boundary; inside the app the type is the truth.
+- Hand-written interfaces duplicating a schema (they drift apart silently).
+- Mind the zod major in this project — zod 4 changed APIs (\`z.email()\` top-level, reworked error customization); follow the versioned zod guideline.
+",
+  ".ai/guidelines/core.md": "# Node Boost Core
+
+Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines/\` are composed from the packages actually installed — trust them over training-data habits, which are often a major version stale.
+
+## Working rules
+
+- Match the project's detected stack and versions (see the \`application_info\` MCP tool) before writing code; version-specific guidelines override generic knowledge.
+- Follow the enabled architecture guidelines (indexed in \`node-boost.md\`); the \`audit\`/\`guard\` commands enforce their rules (\`NB-ARCH-xxx\`). Use \`explain <ID>\` when a finding is unclear.
+- Suppressing a finding requires a reason: \`// nb-disable NB-ARCH-xxx -- <why>\`. Unreasoned suppressions are flagged.
+- After completing changes, run \`node-boost audit --changed\` (or rely on the installed Stop hook) and fix findings before handing back.
+
+## Repository hygiene
+
+- Do not leave dead code: unused exports, files and dependencies are context noise for both humans and agents. \`knip\` finds them — prefer removing over commenting out.
+- Keep \`node-boost.json\` and generated \`.ai/**\` files committed; regenerate with \`node-boost update\` after dependency upgrades (\`doctor\` detects drift).
+",
+  ".ai/guidelines/node-boost.md": "# node-boost guidelines
+
+## Stack
+
+- name: vite-react
+- router: react-router
+- package manager: pnpm
+- linting: biome
+
+## Packages
+
+- @biomejs/biome: 2.3.8 (range)
+- @tanstack/react-query: 5.0.0 (range)
+- react: 19.0.0 (range)
+- react-router: 7.1.0 (range)
+- typescript: 5.9.3 (range)
+- vite: 6.0.0 (range)
+- vitest: 3.2.0 (range)
+- zustand: 5.0.0 (range)
+
+## Architectures
+
+- feature-modules (public-api)
+- data-access-layer
+- typed-contracts
+- state-management
+- modern-typescript
+
+## Files
+
+- .ai/guidelines/architectures/data-access-layer.md: node-boost built-in
+- .ai/guidelines/architectures/feature-modules.md: node-boost built-in
+- .ai/guidelines/architectures/modern-typescript.md: node-boost built-in
+- .ai/guidelines/architectures/state-management.md: node-boost built-in
+- .ai/guidelines/architectures/typed-contracts.md: node-boost built-in
+- .ai/guidelines/core.md: node-boost built-in
+- .ai/guidelines/react-query/core.md: node-boost built-in
+- .ai/guidelines/react-router/7.md: node-boost built-in
+- .ai/guidelines/react-router/core.md: node-boost built-in
+- .ai/guidelines/react/19.md: node-boost built-in
+- .ai/guidelines/react/core.md: node-boost built-in
+- .ai/guidelines/testing/vitest.md: node-boost built-in
+- .ai/guidelines/typescript/core.md: node-boost built-in
+- .ai/guidelines/vite/core.md: node-boost built-in
+- .ai/guidelines/zustand/core.md: node-boost built-in
+",
+  ".ai/guidelines/react-query/core.md": "# TanStack Query Core
+
+- react-query owns server state — it is a cache, not a store. Never copy query results into zustand/Context (see state-management guideline).
+- Components consume query hooks from the feature (\`useInvoices()\`), never \`useQuery\` inline with a raw fetch (see data-access-layer guideline).
+- Query keys are structured and centralized per feature: \`["invoices", filter]\` — keys are the cache identity, treat them as an API.
+- Mutations invalidate what they change: \`useMutation\` + \`queryClient.invalidateQueries({ queryKey: ["invoices"] })\` on success; optimistic updates via \`onMutate\`/\`onError\` rollback where UX warrants it.
+- Handle all result states in the UI: \`isLoading\`, \`isError\`, empty data (see ui-states guideline).
+- Configure sensible \`staleTime\` per data class instead of refetching everything on every focus.
+",
+  ".ai/guidelines/react-router/7.md": "# React Router 7
+
+This project runs React Router 7 — the merged react-router package. Do not generate v5/v6-era imports or idioms.
+
+- Import from \`react-router\` (v7 merged \`react-router-dom\` into it; check which import style this project uses and stay consistent).
+- v7 spans modes: library mode (manual \`<Routes>\`/\`createBrowserRouter\`) and framework mode (file conventions, loaders/actions). **Match the project's existing mode** — do not introduce loaders/actions into a library-mode SPA that fetches via react-query.
+- In library mode with react-query (typical here): data fetching stays in query hooks; the router only maps URLs to screens.
+- Use \`createBrowserRouter\`/route objects over JSX route trees for new route configuration; type route params where the setup provides typegen.
+- No \`<Switch>\`, no \`useHistory\` (v5 relics) — \`<Routes>\`, \`useNavigate\`, \`useSearchParams\`.
+",
+  ".ai/guidelines/react-router/core.md": "# React Router Core
+
+- Routes are configuration, not scattered strings: keep the route tree in one module (\`src/routers.tsx\` / \`src/routes/\`), and reference paths via constants or typed helpers — no hardcoded \`"/invoices/" + id\` concatenation in components.
+- URL is state: filters, pagination, tabs and other shareable view state belong in \`searchParams\`, not in a store (see state-management guideline).
+- Navigation through \`<Link>\`/\`<NavLink>\`/\`useNavigate\` — never \`window.location\` for internal routes.
+- Route params are untrusted input: validate/parse before use (see typed-contracts guideline).
+- Lazy-load route-level components for code splitting; pair each lazy route with a skeleton fallback (see ui-states guideline).
+",
+  ".ai/guidelines/react/19.md": "# React 19
+
+This project runs React 19 — several long-standing idioms are dead. Do not generate them.
+
+- \`ref\` is a regular prop: **no \`forwardRef\`**. \`function Input({ ref, ...props })\` just works.
+- React Compiler (1.0, stable) memoizes automatically: **no ritual \`useCallback\`/\`useMemo\`/\`React.memo\`** — use them only for referential guarantees (e.g. effect deps).
+- Actions are the mutation primitive: \`<form action={fn}>\`, \`useActionState\` for pending/error, \`useFormStatus\` inside forms, \`useOptimistic\` for instant feedback (see ui-states guideline).
+- \`use(promise)\` unwraps promises in render (with Suspense); \`use(Context)\` replaces \`useContext\` and may be called conditionally.
+- Metadata tags (\`<title>\`, \`<meta>\`) render from components and hoist automatically (in non-Next apps).
+- \`propTypes\` and \`defaultProps\` on function components are removed — TypeScript types and default parameters instead.
+",
+  ".ai/guidelines/react/core.md": "# React Core
+
+- Components are pure functions of props/state — side effects live in event handlers, the data layer, or (rarely) effects that sync with external systems.
+- Compute derived data during render; do not mirror props into state or chain \`useEffect\` + \`setState\` (see custom-hooks guideline).
+- Lists need stable \`key\`s from the data, never array indexes for dynamic lists.
+- Prefer composition (children/slots) over configuration props (see component-composition guideline).
+- Keep state close to where it is used; escalate deliberately (see state-management guideline).
+- Semantic HTML first: \`<button>\`, \`<a>\`, \`<label>\` — not clickable \`<div>\`s.
+- Follow the version-specific React guideline in this directory — React idioms shift across majors and training data lags behind.
+",
+  ".ai/guidelines/testing/vitest.md": "# Vitest
+
+- Runner for unit and component tests; component tests use Testing Library + \`@testing-library/jest-dom\` matchers in a jsdom (or browser-mode) environment.
+- Test behavior through roles/labels; mock the network with MSW, never your own hooks/modules under test (see testing-strategy guideline).
+- Structure: \`describe\` per unit/feature, test names state observable behavior ("shows validation error when amount is empty").
+- Use \`vi.fn()\`/\`vi.spyOn\` for collaborator seams; avoid \`vi.mock\` of internal modules — it usually signals a missing seam.
+- Keep tests deterministic: fake timers for time-dependent logic (\`vi.useFakeTimers\`), no real network, no ordering dependence.
+- Run a focused file with \`vitest run <path>\`; the full gate is the project's \`npm test\`.
+",
+  ".ai/guidelines/typescript/core.md": "# TypeScript Core
+
+- \`strict: true\` is the floor; treat compiler errors as design feedback, not noise to cast away.
+- No \`any\` and no \`as\` on external data — \`unknown\` + narrowing, or a zod parse at the boundary (see typed-contracts and modern-typescript guidelines).
+- Model closed sets as discriminated unions or const objects (never \`enum\`); make switches exhaustive with a \`never\` check.
+- Derive types instead of duplicating them: \`z.infer\`, \`ReturnType\`, \`Pick\`/\`Omit\`, \`satisfies\` for literal checking.
+- Types live next to their domain (feature's \`types.ts\`); shared primitives (branded IDs) in \`lib/\`.
+",
+  ".ai/guidelines/vite/core.md": "# Vite Core
+
+- This is a client-rendered SPA: every component is client code, all secrets stay on the backend — the browser bundle is public.
+- Env variables: only \`VITE_\`-prefixed values reach the client (\`import.meta.env.VITE_X\`) — and they are readable by every visitor. Never prefix secrets; validate env in one \`env.ts\` (see typed-contracts and secure-by-default guidelines).
+- Use \`import.meta.env\` (\`DEV\`, \`PROD\`, \`MODE\`) — not \`process.env\` in app code.
+- Code-split at route level with dynamic \`import()\`; heavy rarely-used components load lazily with a skeleton fallback.
+- Static assets through imports (hashed URLs) or \`public/\` for verbatim files; prefer imports.
+- Config in \`vite.config.ts\` stays lean — resolve aliases (\`@/\` → \`src/\`) should match \`tsconfig.json\` paths.
+",
+  ".ai/guidelines/zustand/core.md": "# Zustand Core
+
+- The store holds **client-owned** state only: UI preferences, drafts, selections. Server data lives in react-query — writing fetched results into the store creates a second source of truth (flagged by \`NB-ARCH-009\`).
+- Small, focused stores per concern beat one global store; colocate a feature's store inside the feature.
+- Select narrowly: \`useStore((s) => s.sidebarOpen)\` — subscribing to the whole store re-renders on every change.
+- Actions live inside the store definition (\`set\`/\`get\`), components call them — no external mutation of store state.
+- Persist only what genuinely survives sessions (\`persist\` middleware) and version the storage schema.
+- Before adding to the store, walk the ladder: \`useState\` → URL → Context → store (see state-management guideline).
+",
+}
+`;

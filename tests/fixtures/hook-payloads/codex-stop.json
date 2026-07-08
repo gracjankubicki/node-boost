@@ -1,0 +1,7 @@
+{
+  "turn_id": "turn_123",
+  "cwd": "/workspace",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Done"
+}

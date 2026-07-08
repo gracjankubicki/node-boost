@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { runInstall, runUpdate } from "../../src/install/orchestrator.js";
+import { buildInstallOperations, runInstall, runUpdate } from "../../src/install/orchestrator.js";
+import { detectStack } from "../../src/detect/stack.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -93,7 +94,7 @@ describe("install orchestrator", () => {
       const guideline = await readFile(join(projectRoot, ".ai/guidelines/architectures/feature-modules.md"), "utf8");
 
       expect(config.architectures).toContainEqual({ name: "feature-modules", boundary: "forbid" });
-      expect(guideline).toContain("# Feature modules: forbid cross-feature imports");
+      expect(guideline).toContain("# Feature Modules (forbid boundary)");
     });
   });
 
@@ -107,6 +108,43 @@ describe("install orchestrator", () => {
       await expect(readFile(join(projectRoot, ".ai/guidelines/next/16.md"), "utf8")).resolves.toBe(
         "# Custom Next 16 guidance\n",
       );
+    });
+  });
+
+  it("generates hook config when hooks feature is enabled and preserves foreign hooks", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await mkdir(join(projectRoot, ".claude"), { recursive: true });
+      await mkdir(join(projectRoot, ".codex"), { recursive: true });
+      await mkdir(join(projectRoot, ".cursor"), { recursive: true });
+      await writeFile(join(projectRoot, ".claude/settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "other" }] }] } }), "utf8");
+      await writeFile(join(projectRoot, ".codex/hooks.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "other-codex" }] }] } }), "utf8");
+      await writeFile(join(projectRoot, ".cursor/hooks.json"), JSON.stringify({ version: 1, hooks: { stop: [{ command: "other-cursor" }] } }), "utf8");
+
+      const operations = await buildInstallOperations({
+        packageRoot: repoRoot,
+        projectRoot,
+        stack: await detectStack(projectRoot),
+        config: {
+          version: 1,
+          generatedWith: "0.1.0",
+          stack: "next",
+          agents: ["claude-code", "codex", "cursor"],
+          features: { guidelines: true, skills: true, mcp: true, architecture: true, hooks: true },
+          architectures: [{ name: "feature-modules", boundary: "forbid" }],
+          audit: { exclude: [], rules: {}, ruleOptions: {} },
+        },
+      });
+
+      const claude = parseJsonObject(readOperation(operations, ".claude/settings.json"));
+      const codex = parseJsonObject(readOperation(operations, ".codex/hooks.json"));
+      const cursor = parseJsonObject(readOperation(operations, ".cursor/hooks.json"));
+
+      expect(JSON.stringify(claude)).toContain("other");
+      expect(JSON.stringify(claude)).toContain("node-boost guard --hook claude-code");
+      expect(JSON.stringify(codex)).toContain("other-codex");
+      expect(JSON.stringify(codex)).toContain("node-boost guard --hook codex");
+      expect(JSON.stringify(cursor)).toContain("other-cursor");
+      expect(JSON.stringify(cursor)).toContain("node-boost guard --hook cursor");
     });
   });
 
@@ -180,4 +218,22 @@ async function walk(dir: string): Promise<string[]> {
 
 async function expectPath(projectRoot: string, path: string): Promise<void> {
   await expect(readFile(join(projectRoot, path), "utf8")).resolves.toBeTypeOf("string");
+}
+
+function readOperation(operations: Array<{ path: string; content: string }>, path: string): string {
+  const operation = operations.find((item) => item.path === path);
+  if (!operation) {
+    throw new Error(`Missing operation ${path}`);
+  }
+
+  return operation.content;
+}
+
+function parseJsonObject(content: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(content);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Expected JSON object");
+  }
+
+  return parsed as Record<string, unknown>;
 }

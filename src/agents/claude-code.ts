@@ -1,5 +1,6 @@
 import type { AgentInstaller, AgentRenderContext, FileOperation } from "./agent.js";
 import { formatMcpCommand } from "./agent.js";
+import { mergeClaudeCodeHooks } from "./merge-hooks.js";
 import { mergeMcpJson } from "./merge-json.js";
 import { upsertManagedBlock } from "./managed-block.js";
 
@@ -9,7 +10,7 @@ export const claudeCodeAgent: AgentInstaller = {
     supportsGuidelines: true,
     supportsSkills: true,
     supportsMcp: true,
-    supportsHooks: false,
+    supportsHooks: true,
   },
   render(context: AgentRenderContext): FileOperation[] {
     const body = [
@@ -28,6 +29,10 @@ export const claudeCodeAgent: AgentInstaller = {
       {
         path: ".mcp.json",
         content: mergeMcpJson(context.existingContent(".mcp.json"), context.mcpCommand),
+      },
+      {
+        path: ".claude/settings.json",
+        content: mergeClaudeCodeHooks(context.existingContent(".claude/settings.json"), context.hookCommands["claude-code"]),
       },
       ...context.selectedSkills.map((skill) => ({
         path: skill.outputPath.replace(/^\.ai\/skills\//, ".claude/skills/"),

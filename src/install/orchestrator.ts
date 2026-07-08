@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { ZodError } from "zod";
 import { agentInstallers } from "../agents/index.js";
-import { createMcpCommand, type FileOperation } from "../agents/agent.js";
+import { createHookCommand, createMcpCommand, type FileOperation } from "../agents/agent.js";
 import { applyResourceOverrides } from "../compose/overrides.js";
 import { composeGuidelines } from "../compose/guidelines.js";
 import { composeSkills } from "../compose/skills.js";
@@ -112,11 +112,19 @@ export async function buildInstallOperations(input: {
     "CLAUDE.md",
     "AGENTS.md",
     ".mcp.json",
+    ".claude/settings.json",
+    ".codex/hooks.json",
     ".codex/config.toml",
+    ".cursor/hooks.json",
     ".cursor/mcp.json",
   ]);
 
   const mcpCommand = createMcpCommand(input.stack.packageManager.name);
+  const hookCommands = {
+    "claude-code": createHookCommand(input.stack.packageManager.name, "claude-code"),
+    codex: createHookCommand(input.stack.packageManager.name, "codex"),
+    cursor: createHookCommand(input.stack.packageManager.name, "cursor"),
+  };
   const agentOperations = input.config.agents.flatMap((agentName) =>
     agentInstallers[agentName]
       .render({
@@ -126,6 +134,7 @@ export async function buildInstallOperations(input: {
         existingContent: (path) => existingContent.get(path) ?? null,
         skillContentByOutputPath,
         mcpCommand,
+        hookCommands,
       })
       .filter((operation) => keepOperationForFeatures(operation.path, input.config.features)),
   );
@@ -342,6 +351,10 @@ async function readPackageVersion(packageRoot: string): Promise<string> {
 
 function keepOperationForFeatures(path: string, features: NodeBoostConfig["features"]): boolean {
   if ((path === ".mcp.json" || path === ".codex/config.toml" || path === ".cursor/mcp.json") && !features.mcp) {
+    return false;
+  }
+
+  if ((path === ".claude/settings.json" || path === ".codex/hooks.json" || path === ".cursor/hooks.json") && !features.hooks) {
     return false;
   }
 

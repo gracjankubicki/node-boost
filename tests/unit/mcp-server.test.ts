@@ -1,11 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { mkdtemp, cp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, cp, rm, writeFile, readFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createNodeBoostMcpServer } from "../../src/mcp/server.js";
+import { runInstall } from "../../src/install/orchestrator.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const servers: Array<{ close: () => Promise<void> }> = [];
@@ -98,7 +99,7 @@ describe("node-boost MCP server", () => {
     });
   });
 
-  it("runs minimal doctor checks", async () => {
+  it("runs full doctor checks", async () => {
     await withFixture("next-app", async (projectRoot) => {
       const missingClient = await createClient(projectRoot);
       const missing = await callJsonTool<DoctorResult>(missingClient, "doctor");
@@ -114,14 +115,15 @@ describe("node-boost MCP server", () => {
       const driftClient = await createClient(projectRoot);
       const drift = await callJsonTool<DoctorResult>(driftClient, "doctor");
 
-      expect(drift.ok).toBe(true);
+      expect(drift.ok).toBe(false);
       expect(drift.checks).toContainEqual({
         id: "generated-with-drift",
         status: "warn",
         message: "generatedWith is 0.0.1, package is 0.1.0. Run node-boost update.",
       });
+      expect(drift.checks).toContainEqual(expect.objectContaining({ id: "agent-files-present", status: "fail" }));
 
-      await writeNodeBoostConfig(projectRoot, "0.1.0");
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
       const validClient = await createClient(projectRoot);
       const valid = await callJsonTool<DoctorResult>(validClient, "doctor");
 
@@ -131,6 +133,58 @@ describe("node-boost MCP server", () => {
         status: "pass",
         message: "node-boost.json is valid.",
       });
+
+      await writeFile(join(projectRoot, ".ai", "guidelines", "core.md"), "# edited\n", "utf8");
+      const staleClient = await createClient(projectRoot);
+      const stale = await callJsonTool<DoctorResult>(staleClient, "doctor");
+
+      expect(stale.ok).toBe(true);
+      expect(stale.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "warn" }));
+    });
+  });
+
+  it("reports doctor failures and warnings for invalid config, hooks, overrides, and strict mode", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await writeFile(join(projectRoot, "node-boost.json"), JSON.stringify({ version: 2, stack: "next" }), "utf8");
+      const client = await createClient(projectRoot);
+      const invalid = await callJsonTool<DoctorResult>(client, "doctor");
+
+      expect(invalid.ok).toBe(false);
+      expect(invalid.checks).toContainEqual(expect.objectContaining({ id: "config-valid", status: "fail" }));
+    });
+
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const config = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
+        features: { hooks: boolean };
+      };
+      config.features.hooks = true;
+      await writeFile(join(projectRoot, "node-boost.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+      const client = await createClient(projectRoot);
+      const hooks = await callJsonTool<DoctorResult>(client, "doctor");
+
+      expect(hooks.ok).toBe(false);
+      expect(hooks.checks).toContainEqual(expect.objectContaining({ id: "hooks-wired", status: "fail" }));
+    });
+
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      await mkdir(join(projectRoot, ".node-boost", "guidelines"), { recursive: true });
+      await writeFile(join(projectRoot, ".node-boost", "guidelines", "core.md"), "# override\n", "utf8");
+
+      const client = await createClient(projectRoot);
+      const overrides = await callJsonTool<DoctorResult>(client, "doctor");
+
+      expect(overrides.checks).toContainEqual(expect.objectContaining({ id: "overrides-detected", status: "pass" }));
+      expect(overrides.checks.find((check) => check.id === "overrides-detected")?.details).toContain("guidelines/core.md");
+    });
+
+    await withFixture("dirty-next-app", async (projectRoot) => {
+      const client = await createClient(projectRoot);
+      const strict = await callJsonTool<DoctorResult>(client, "doctor");
+
+      expect(strict.checks).toContainEqual(expect.objectContaining({ id: "lint-strict", status: "warn" }));
     });
   });
 
@@ -145,6 +199,23 @@ describe("node-boost MCP server", () => {
       const doctor = await callJsonTool<DoctorResult>(client, "doctor");
 
       expect(doctor.checks.some((check) => check.id === "stack-detected")).toBe(true);
+    });
+  });
+
+  it("exposes audit and explain_finding tools", async () => {
+    await withFixture("dirty-next-app", async (projectRoot) => {
+      const client = await createClient(projectRoot);
+      const audit = await callJsonTool<{ ok: boolean; findings: Array<{ rule: string }> }>(client, "audit");
+
+      expect(audit.ok).toBe(false);
+      expect(audit.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-005" }));
+
+      const explained = await client.callTool({ name: "explain_finding", arguments: { rule: "NB-ARCH-005" } });
+      const parsed = JSON.parse(readText(explained)) as { ok: boolean; finding: { rule: string; guideline: string } };
+
+      expect(parsed.ok).toBe(true);
+      expect(parsed.finding.rule).toBe("NB-ARCH-005");
+      expect(parsed.finding.guideline).toContain("data-access-layer");
     });
   });
 });
@@ -245,5 +316,5 @@ interface UnsupportedRoutes {
 
 interface DoctorResult {
   ok: boolean;
-  checks: Array<{ id: string; status: string; message: string }>;
+  checks: Array<{ id: string; status: string; message: string; details?: string[] }>;
 }

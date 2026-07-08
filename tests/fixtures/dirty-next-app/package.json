@@ -1,0 +1,12 @@
+{
+  "name": "dirty-next-app",
+  "private": true,
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

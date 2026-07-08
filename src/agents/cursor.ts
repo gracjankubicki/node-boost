@@ -1,5 +1,6 @@
 import type { AgentInstaller, AgentRenderContext, FileOperation } from "./agent.js";
 import { formatMcpCommand } from "./agent.js";
+import { mergeCursorHooks } from "./merge-hooks.js";
 import { mergeMcpJson } from "./merge-json.js";
 
 export const cursorAgent: AgentInstaller = {
@@ -8,7 +9,7 @@ export const cursorAgent: AgentInstaller = {
     supportsGuidelines: true,
     supportsSkills: true,
     supportsMcp: true,
-    supportsHooks: false,
+    supportsHooks: true,
   },
   render(context: AgentRenderContext): FileOperation[] {
     return [
@@ -30,6 +31,10 @@ export const cursorAgent: AgentInstaller = {
       {
         path: ".cursor/mcp.json",
         content: mergeMcpJson(context.existingContent(".cursor/mcp.json"), context.mcpCommand),
+      },
+      {
+        path: ".cursor/hooks.json",
+        content: mergeCursorHooks(context.existingContent(".cursor/hooks.json"), context.hookCommands.cursor),
       },
     ];
   },
