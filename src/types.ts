@@ -79,3 +79,15 @@ export interface ResourceSelection {
   packageName?: string;
   packageMajor?: number;
 }
+
+export interface AgentCapabilities {
+  supportsGuidelines: boolean;
+  supportsSkills: boolean;
+  supportsMcp: boolean;
+  supportsHooks: boolean;
+}
+
+export interface Agent {
+  name: AgentName;
+  capabilities: AgentCapabilities;
+}

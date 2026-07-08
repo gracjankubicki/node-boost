@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { DetectedStack, ResourceSelection } from "../types.js";
+import type { DetectedStack, NormalizedArchitecture, ResourceSelection } from "../types.js";
 import { listResourceFiles } from "./resources.js";
 
 const packageResourceMap: Record<string, string> = {
@@ -16,7 +16,11 @@ const packageResourceMap: Record<string, string> = {
   playwright: "testing",
 };
 
-export async function composeGuidelines(rootDir: string, stack: DetectedStack): Promise<ResourceSelection[]> {
+export async function composeGuidelines(
+  rootDir: string,
+  stack: DetectedStack,
+  architectures: NormalizedArchitecture[] = [],
+): Promise<ResourceSelection[]> {
   const availableFiles = await listResourceFiles(rootDir, "guidelines");
   const selected = new Set<string>(["core.md"]);
 
@@ -42,17 +46,33 @@ export async function composeGuidelines(rootDir: string, stack: DetectedStack): 
     addIfAvailable(selected, availableFiles, "testing/playwright.md");
   }
 
-  return [...selected]
+  const packageGuidelines = [...selected]
     .sort((a, b) => a.localeCompare(b))
     .map((file) => ({
       kind: "guideline",
       sourcePath: join("resources", "react", "guidelines", file),
       outputPath: join(".ai", "guidelines", file),
-    }));
+    }) satisfies ResourceSelection);
+
+  const architectureGuidelines = architectures.map((architecture) => ({
+    kind: "guideline",
+    sourcePath: join("resources", "react", "architectures", architecture.name, architectureVariantPath(architecture)),
+    outputPath: join(".ai", "guidelines", "architectures", `${architecture.name}.md`),
+  }) satisfies ResourceSelection);
+
+  return [...packageGuidelines, ...architectureGuidelines].sort((a, b) => a.outputPath.localeCompare(b.outputPath));
 }
 
 function addIfAvailable(selected: Set<string>, availableFiles: string[], file: string): void {
   if (availableFiles.includes(file)) {
     selected.add(file);
   }
+}
+
+function architectureVariantPath(architecture: NormalizedArchitecture): string {
+  if (architecture.name === "feature-modules" && typeof architecture.options.boundary === "string") {
+    return join("variants", `${architecture.options.boundary}.md`);
+  }
+
+  return "guideline.md";
 }

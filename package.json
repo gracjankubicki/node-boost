@@ -28,7 +28,9 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "citty": "^0.2.2",
+    "smol-toml": "^1.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
