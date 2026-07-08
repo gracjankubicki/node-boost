@@ -1,5 +1,5 @@
 {
-  "name": "node-boost",
+  "name": "@node-boost/node-boost",
   "version": "0.1.0",
   "description": "CLI and MCP guidance layer for Node/React projects.",
   "type": "module",
@@ -13,6 +13,9 @@
     "url": "https://github.com/gracjankubicki/node-boost/issues"
   },
   "homepage": "https://github.com/gracjankubicki/node-boost#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "node",
     "react",

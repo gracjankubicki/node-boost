@@ -7,9 +7,11 @@ No telemetry. node-boost reads your local project, writes local files, and does 
 ## Quick Start
 
 ```sh
-npm i -D node-boost
+npm i -D @node-boost/node-boost
 npx node-boost install
 ```
+
+The npm package is published as `@node-boost/node-boost`; the installed CLI binary is `node-boost`.
 
 The installer detects your stack, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, and configures selected agents:
 
