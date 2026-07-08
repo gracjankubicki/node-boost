@@ -37,7 +37,7 @@
     }
   },
   "bin": {
-    "node-boost": "./dist/cli.js"
+    "node-boost": "dist/cli.js"
   },
   "types": "./dist/index.d.ts",
   "files": [
