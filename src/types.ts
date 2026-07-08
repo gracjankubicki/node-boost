@@ -10,6 +10,8 @@ export type StackName = "next" | "vite-react" | "react-generic" | "unknown";
 
 export type RouterKind = "app" | "pages" | "react-router" | "none" | "unknown";
 
+export type LintingKind = "biome" | "eslint-prettier" | "eslint" | "none";
+
 export interface PackageInfo {
   name: string;
   declaredRange: string | null;
@@ -23,6 +25,7 @@ export interface DetectedStack {
   name: StackName;
   router: RouterKind;
   srcDir: boolean;
+  linting: LintingKind;
   packageManager: PackageManagerInfo;
   packages: Record<string, PackageInfo>;
   warnings: string[];
@@ -42,7 +45,24 @@ export type ArchitectureSlug =
   | "component-composition"
   | "styling-tailwind"
   | "testing-strategy"
-  | "error-loading-boundaries";
+  | "error-loading-boundaries"
+  | "secure-by-default"
+  | "modern-typescript"
+  | "ui-states";
+
+export type FeatureModulesBoundary = "public-api" | "forbid";
+
+export type ArchitectureConfigEntry =
+  | ArchitectureSlug
+  | { name: "feature-modules"; boundary?: FeatureModulesBoundary }
+  | {
+      name: Exclude<ArchitectureSlug, "feature-modules">;
+    };
+
+export interface NormalizedArchitecture {
+  name: ArchitectureSlug;
+  options: Record<string, unknown>;
+}
 
 export interface StackAdapter {
   name: StackName;

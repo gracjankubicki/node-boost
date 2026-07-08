@@ -8,6 +8,9 @@ export const commonArchitectures = [
   "custom-hooks",
   "component-composition",
   "testing-strategy",
+  "secure-by-default",
+  "modern-typescript",
+  "ui-states",
 ] satisfies ArchitectureSlug[];
 
 export const nextOnlyArchitectures = [

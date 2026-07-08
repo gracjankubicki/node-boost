@@ -14,6 +14,7 @@ describe("detectStack", () => {
     expect(stack.srcDir).toBe(true);
     expect(stack.packageManager.name).toBe("npm");
     expect(stack.packageManager.source).toBe("lockfile");
+    expect(stack.linting).toBe("eslint-prettier");
     expect(stack.packages.next.version).toBe("16.2.9");
     expect(stack.packages.next.major).toBe(16);
     expect(stack.packages.next.source).toBe("range");
@@ -24,6 +25,7 @@ describe("detectStack", () => {
 
     expect(stack.name).toBe("vite-react");
     expect(stack.router).toBe("react-router");
+    expect(stack.linting).toBe("biome");
     expect(stack.packageManager.name).toBe("pnpm");
     expect(stack.packageManager.source).toBe("lockfile");
     expect(stack.packages["react-router"].major).toBe(7);

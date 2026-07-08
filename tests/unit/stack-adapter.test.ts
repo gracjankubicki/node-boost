@@ -14,6 +14,9 @@ describe("stack adapters", () => {
     expect(adapter?.name).toBe("next");
     expect(adapter?.recommendedArchitectures(stack)).toContain("server-first-components");
     expect(adapter?.recommendedArchitectures(stack)).toContain("error-loading-boundaries");
+    expect(adapter?.recommendedArchitectures(stack)).toContain("secure-by-default");
+    expect(adapter?.recommendedArchitectures(stack)).toContain("modern-typescript");
+    expect(adapter?.recommendedArchitectures(stack)).toContain("ui-states");
     expect(adapter?.recommendedArchitectures(stack)).toContain("styling-tailwind");
   });
 
@@ -24,5 +27,8 @@ describe("stack adapters", () => {
     expect(adapter?.name).toBe("vite-react");
     expect(adapter?.recommendedArchitectures(stack)).not.toContain("server-first-components");
     expect(adapter?.recommendedArchitectures(stack)).not.toContain("error-loading-boundaries");
+    expect(adapter?.recommendedArchitectures(stack)).toContain("secure-by-default");
+    expect(adapter?.recommendedArchitectures(stack)).toContain("modern-typescript");
+    expect(adapter?.recommendedArchitectures(stack)).toContain("ui-states");
   });
 });

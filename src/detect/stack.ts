@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detectPackageManager } from "./package-manager.js";
 import { detectNextRouter } from "./router.js";
-import type { DetectedStack, PackageInfo, StackName } from "../types.js";
+import type { DetectedStack, LintingKind, PackageInfo, StackName } from "../types.js";
 
 const trackedPackages = [
   "next",
@@ -17,6 +17,9 @@ const trackedPackages = [
   "vitest",
   "jest",
   "playwright",
+  "eslint",
+  "prettier",
+  "@biomejs/biome",
 ] as const;
 
 type PackageJson = {
@@ -36,6 +39,7 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
   const nextRouter = name === "next" ? await detectNextRouter(rootDir) : null;
   const router = nextRouter?.router ?? (name === "vite-react" ? "react-router" : "none");
   const srcDir = nextRouter?.srcDir ?? false;
+  const linting = detectLinting(packages);
 
   if (Object.values(packages).some((pkg) => pkg.source === "range")) {
     warnings.push("node_modules not available for at least one package; using declared version range fallback.");
@@ -46,10 +50,27 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
     name,
     router,
     srcDir,
+    linting,
     packageManager,
     packages,
     warnings,
   };
+}
+
+function detectLinting(packages: Record<string, PackageInfo>): LintingKind {
+  if (packages["@biomejs/biome"]?.version) {
+    return "biome";
+  }
+
+  if (packages.eslint?.version && packages.prettier?.version) {
+    return "eslint-prettier";
+  }
+
+  if (packages.eslint?.version) {
+    return "eslint";
+  }
+
+  return "none";
 }
 
 async function detectPackages(rootDir: string, packageJson: PackageJson): Promise<Record<string, PackageInfo>> {
