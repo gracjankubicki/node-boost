@@ -19,6 +19,10 @@ export {
   runInstall,
   runUpdate,
 } from "./install/orchestrator.js";
+export { createNodeBoostMcpServer, startNodeBoostMcpServer } from "./mcp/server.js";
+export { applicationInfoTool } from "./mcp/tools/application-info.js";
+export { doctorTool } from "./mcp/tools/doctor.js";
+export { listRoutesTool } from "./mcp/tools/list-routes.js";
 export { getStackAdapter, stackAdapters } from "./stacks/adapter.js";
 export type {
   Agent,

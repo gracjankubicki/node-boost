@@ -3,6 +3,7 @@ export type PackageManagerName = "npm" | "pnpm" | "yarn" | "bun";
 export interface PackageManagerInfo {
   name: PackageManagerName;
   lockfile: string | null;
+  version: string | null;
   source: "lockfile" | "packageManagerField" | "default";
 }
 

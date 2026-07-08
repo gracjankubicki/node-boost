@@ -11,21 +11,25 @@ const lockfiles: Array<{ name: PackageManagerName; file: string }> = [
 ];
 
 export async function detectPackageManager(rootDir: string): Promise<PackageManagerInfo> {
+  const packageJson = await readJsonObject(join(rootDir, "package.json"));
+  const declaredPackageManager = parsePackageManager(packageJson);
+
   for (const lockfile of lockfiles) {
     if (await fileExists(join(rootDir, lockfile.file))) {
-      return { name: lockfile.name, lockfile: lockfile.file, source: "lockfile" };
+      return {
+        name: lockfile.name,
+        lockfile: lockfile.file,
+        version: declaredPackageManager?.name === lockfile.name ? declaredPackageManager.version : null,
+        source: "lockfile",
+      };
     }
   }
 
-  const packageJson = await readJsonObject(join(rootDir, "package.json"));
-  const packageManager = typeof packageJson?.packageManager === "string" ? packageJson.packageManager : null;
-  const managerName = packageManager?.split("@")[0];
-
-  if (isPackageManagerName(managerName)) {
-    return { name: managerName, lockfile: null, source: "packageManagerField" };
+  if (declaredPackageManager) {
+    return { name: declaredPackageManager.name, lockfile: null, version: declaredPackageManager.version, source: "packageManagerField" };
   }
 
-  return { name: "npm", lockfile: null, source: "default" };
+  return { name: "npm", lockfile: null, version: null, source: "default" };
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -49,6 +53,17 @@ async function readJsonObject(path: string): Promise<Record<string, unknown> | n
 
 function isPackageManagerName(value: string | undefined): value is PackageManagerName {
   return value === "npm" || value === "pnpm" || value === "yarn" || value === "bun";
+}
+
+function parsePackageManager(packageJson: Record<string, unknown> | null): { name: PackageManagerName; version: string | null } | null {
+  const packageManager = typeof packageJson?.packageManager === "string" ? packageJson.packageManager : null;
+  const [managerName, version = null] = packageManager?.split("@") ?? [];
+
+  if (isPackageManagerName(managerName)) {
+    return { name: managerName, version };
+  }
+
+  return null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

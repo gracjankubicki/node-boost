@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "citty": "^0.2.2",
     "smol-toml": "^1.7.0",
     "zod": "^4.4.3"

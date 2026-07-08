@@ -1,5 +1,6 @@
 import { defineCommand, runMain } from "citty";
 import { installCommand } from "./commands/install.js";
+import { mcpCommand } from "./commands/mcp.js";
 import { updateCommand } from "./commands/update.js";
 
 const main = defineCommand({
@@ -9,6 +10,7 @@ const main = defineCommand({
   },
   subCommands: {
     install: installCommand,
+    mcp: mcpCommand,
     update: updateCommand,
   },
 });
