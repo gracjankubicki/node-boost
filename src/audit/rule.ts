@@ -1,6 +1,7 @@
 import type { SourceFile } from "ts-morph";
 import type { ArchitectureSlug, DetectedStack, StackName } from "../types.js";
 import type { NodeBoostConfig } from "../config/schema.js";
+import type { TypeScriptModuleResolver } from "./typescript-resolver.js";
 
 export type AuditSeverity = "err" | "warn";
 export type RuleSeverity = AuditSeverity | "off";
@@ -44,6 +45,7 @@ export interface AuditRuleContext {
   severity: AuditSeverity;
   architectureOptions: Record<string, unknown>;
   ruleOptions: Record<string, unknown>;
+  moduleResolver: TypeScriptModuleResolver;
 }
 
 export interface ExplainEntry {
@@ -60,6 +62,7 @@ export interface ExplainEntry {
 export interface AuditScopeResult {
   mode: "all" | "changed" | "base" | "paths";
   files: string[];
+  allPaths: string[];
   warnings: AuditFinding[];
 }
 

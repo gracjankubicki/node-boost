@@ -6,7 +6,9 @@ import { detectStack } from "../detect/stack.js";
 import { auditRules } from "./registry.js";
 import { resolveAuditScope } from "./scope.js";
 import { buildSuppressionIndex } from "./suppression.js";
+import { createTypeScriptModuleResolver } from "./typescript-resolver.js";
 import type { AuditFile, AuditFinding, AuditResult } from "./rule.js";
+import { splitTextLines } from "./rules/helpers.js";
 
 export interface RunAuditOptions {
   rootDir?: string;
@@ -43,6 +45,7 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
   const suppressionIndex = buildSuppressionIndex(files);
   const enabledArchitectures = new Map(normalizeArchitectures(config).map((architecture) => [architecture.name, architecture.options]));
   const findings: AuditFinding[] = [...scope.warnings, ...parseWarnings, ...suppressionIndex.metaFindings];
+  const moduleResolver = createTypeScriptModuleResolver(rootDir);
   let suppressed = 0;
 
   for (const rule of auditRules) {
@@ -57,11 +60,12 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
       stack,
       config,
       files,
-      allPaths: new Set(scope.files),
+      allPaths: new Set(scope.allPaths),
       rule,
       severity,
       architectureOptions: enabledArchitectures.get(rule.architecture) ?? {},
       ruleOptions: config.audit.ruleOptions[rule.id] ?? {},
+      moduleResolver,
     });
 
     for (const finding of rawFindings) {
@@ -74,6 +78,8 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
       }
     }
   }
+
+  findings.push(...moduleResolver.warnings());
 
   const err = findings.filter((finding) => finding.sev === "err").length;
   const warn = findings.filter((finding) => finding.sev === "warn").length;
@@ -121,13 +127,32 @@ async function readAuditFiles(rootDir: string, files: string[], parseWarnings: A
     skipAddingFilesFromTsConfig: true,
   });
 
-  return Promise.all(
+  const resolved = await Promise.all(
     files.map(async (file) => {
       const absolutePath = join(rootDir, file);
-      const content = await readFile(absolutePath, "utf8");
+      const content = await readFile(absolutePath, "utf8").catch((error: unknown) => {
+        if (isFileNotFoundError(error)) {
+          parseWarnings.push({
+            rule: "NB-META-005",
+            sev: "warn",
+            file,
+            line: 1,
+            code: "file-disappeared",
+          });
+          return null;
+        }
+
+        throw error;
+      });
+      if (content === null) {
+        return null;
+      }
+
       const started = performance.now();
-      const sourceFile = project.addSourceFileAtPath(absolutePath);
-      const diagnostics = sourceFile.getPreEmitDiagnostics().filter((diagnostic) => diagnostic.getCategory() === DiagnosticCategory.Error && diagnostic.getCode() < 2000);
+      const sourceFile = project.createSourceFile(absolutePath, content, { overwrite: true });
+      const diagnostics = parseDiagnostics(sourceFile.compilerNode).filter((diagnostic) =>
+        diagnostic.category === DiagnosticCategory.Error && diagnostic.code < 2000,
+      );
       const elapsed = performance.now() - started;
       const skipped = diagnostics.length > 0 || elapsed > 5000;
 
@@ -136,7 +161,7 @@ async function readAuditFiles(rootDir: string, files: string[], parseWarnings: A
           rule: "NB-META-002",
           sev: "warn",
           file,
-          line: diagnostics[0]?.getLineNumber() ?? 1,
+          line: diagnostics[0]?.start === undefined ? 1 : sourceFile.getLineAndColumnAtPos(diagnostics[0].start).line,
           code: "parse-error",
         });
       } else if (elapsed > 5000) {
@@ -153,12 +178,29 @@ async function readAuditFiles(rootDir: string, files: string[], parseWarnings: A
         path: file,
         absolutePath,
         content,
-        lines: content.split(/\r?\n/),
+        lines: splitTextLines(content),
         sourceFile: skipped ? null : sourceFile,
         skipped,
       };
     }),
   );
+
+  return resolved.filter((file): file is AuditFile => file !== null);
+}
+
+interface ParseDiagnostic {
+  category: DiagnosticCategory;
+  code: number;
+  start?: number;
+}
+
+function parseDiagnostics(sourceFile: unknown): readonly ParseDiagnostic[] {
+  if (typeof sourceFile !== "object" || sourceFile === null || !("parseDiagnostics" in sourceFile)) {
+    return [];
+  }
+
+  const diagnostics = sourceFile.parseDiagnostics;
+  return Array.isArray(diagnostics) ? diagnostics as ParseDiagnostic[] : [];
 }
 
 function compareFindings(a: AuditFinding, b: AuditFinding): number {

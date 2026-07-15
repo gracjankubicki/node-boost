@@ -33,6 +33,10 @@ export function createHookCommand(packageManager: PackageManagerName, agent: Age
 }
 
 export function createPackageCommand(packageManager: PackageManagerName, nodeBoostArgs: string[]): McpCommand {
+  if (packageManager === "npm") {
+    return { command: "npm", args: ["exec", "--", "node-boost", ...nodeBoostArgs] };
+  }
+
   if (packageManager === "yarn") {
     return { command: "yarn", args: ["node-boost", ...nodeBoostArgs] };
   }

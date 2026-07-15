@@ -1,7 +1,8 @@
 {
+  "session_id": "abc123",
   "turn_id": "turn_123",
   "cwd": "/workspace",
   "hook_event_name": "Stop",
-  "stop_hook_active": false,
+  "permission_mode": "default",
   "last_assistant_message": "Done"
 }

@@ -39,6 +39,71 @@ export function mergeCursorHooks(existingContent: string | null, command: McpCom
   return `${JSON.stringify(sortJson(root), null, 2)}\n`;
 }
 
+export function removeClaudeCodeHooks(existingContent: string | null): string | null {
+  return removeGroupedHooks(existingContent, "Stop", "claude-code");
+}
+
+export function removeCodexHooks(existingContent: string | null): string | null {
+  return removeGroupedHooks(existingContent, "Stop", "codex");
+}
+
+export function removeCursorHooks(existingContent: string | null): string | null {
+  if (existingContent === null) {
+    return null;
+  }
+
+  const root = parseObject(existingContent);
+  const hooks = asObject(root.hooks);
+  const stop = asArray(hooks.stop);
+  if (!stop.some((entry) => isObject(entry) && isNodeBoostHookCommand(entry.command, "cursor"))) {
+    return existingContent;
+  }
+  hooks.stop = stop.filter((entry) =>
+    !isObject(entry) || !isNodeBoostHookCommand(entry.command, "cursor"),
+  );
+  root.hooks = hooks;
+  return `${JSON.stringify(sortJson(root), null, 2)}\n`;
+}
+
+function removeGroupedHooks(existingContent: string | null, event: string, agent: string): string | null {
+  if (existingContent === null) {
+    return null;
+  }
+
+  const root = parseObject(existingContent);
+  const hooks = asObject(root.hooks);
+  const entries = asArray(hooks[event]);
+  if (!entries.some((entry) => isObject(entry) && Array.isArray(entry.hooks)
+    && entry.hooks.some((hook) => isObject(hook) && isNodeBoostHookCommand(hook.command, agent)))) {
+    return existingContent;
+  }
+  hooks[event] = entries.flatMap((entry) => {
+    if (!isObject(entry) || !Array.isArray(entry.hooks)) {
+      return [entry];
+    }
+
+    const remaining = entry.hooks.filter((hook) =>
+      !isObject(hook) || !isNodeBoostHookCommand(hook.command, agent),
+    );
+    return remaining.length > 0 ? [{ ...entry, hooks: remaining }] : [];
+  });
+  root.hooks = hooks;
+  return `${JSON.stringify(sortJson(root), null, 2)}\n`;
+}
+
+function isNodeBoostHookCommand(value: unknown, agent: string): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const parts = value.split(" ").filter(Boolean);
+  const executable = parts.indexOf("node-boost");
+  return executable !== -1
+    && parts[executable + 1] === "guard"
+    && parts[executable + 2] === "--hook"
+    && parts[executable + 3] === agent;
+}
+
 function appendCommandHook(entries: unknown[], command: string, includeType: boolean): unknown[] {
   if (entries.some((entry) => hookGroupHasCommand(entry, command))) {
     return entries;

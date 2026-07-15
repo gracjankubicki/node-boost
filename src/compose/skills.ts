@@ -18,7 +18,7 @@ export async function composeSkills(
     selected.add("next-development/SKILL.md");
   }
 
-  if (stack.name === "vite-react") {
+  if (stack.name === "vite-react" && stack.packages["react-router"]?.version) {
     selected.add("spa-routing/SKILL.md");
   }
 

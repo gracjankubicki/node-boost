@@ -1,0 +1,11 @@
+{
+  "name": "vite-no-router-fixture",
+  "private": true,
+  "dependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0"
+  }
+}

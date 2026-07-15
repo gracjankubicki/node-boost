@@ -1,25 +1,53 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, normalize } from "node:path";
+import { basename, join } from "node:path";
 import picomatch from "picomatch";
+import { Node, SyntaxKind, type Expression } from "ts-morph";
 import type { AuditFile, AuditFinding } from "../rule.js";
 
-export function hasUseClientDirective(file: AuditFile): boolean {
-  return file.lines.some((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("//")) {
-      return false;
-    }
+const sourceExtensions = new Set(["js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts"]);
 
-    return trimmed === '"use client";' || trimmed === '"use client"' || trimmed === "'use client';" || trimmed === "'use client'";
-  });
+export function useClientDirectiveLine(file: AuditFile): number | null {
+  if (!file.sourceFile) {
+    return null;
+  }
+
+  for (const statement of file.sourceFile.getStatements()) {
+    if (!Node.isExpressionStatement(statement)) {
+      return null;
+    }
+    const expression = statement.getExpression();
+    if (!Node.isStringLiteral(expression)) {
+      return null;
+    }
+    if (expression.getLiteralValue() === "use client") {
+      return statement.getStartLineNumber();
+    }
+  }
+
+  return null;
+}
+
+export function hasUseClientDirective(file: AuditFile): boolean {
+  return useClientDirectiveLine(file) !== null;
 }
 
 export function isClientComponent(file: AuditFile, stackName: string): boolean {
-  return stackName === "vite-react" || hasUseClientDirective(file);
+  if (stackName !== "vite-react") {
+    return hasUseClientDirective(file);
+  }
+
+  if (!file.sourceFile) {
+    return false;
+  }
+
+  return file.sourceFile.getDescendantsOfKind(SyntaxKind.JsxElement).length > 0
+    || file.sourceFile.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement).length > 0
+    || file.sourceFile.getDescendantsOfKind(SyntaxKind.JsxFragment).length > 0;
 }
 
 export function isDataLayerFile(file: AuditFile, globs: string[]): boolean {
-  if (file.path.endsWith("/route.ts") || file.path.endsWith("/route.tsx")) {
+  const parts = basename(file.path).split(".");
+  if (parts[0] === "route" && parts.length === 2 && sourceExtensions.has(parts[1] ?? "")) {
     return true;
   }
 
@@ -30,13 +58,15 @@ export function dataLayerGlobs(options: Record<string, unknown>): string[] {
   const configured = options.dataLayerGlobs;
   return Array.isArray(configured) && configured.every((item) => typeof item === "string")
     ? configured
-    : ["**/api/**", "**/server/**", "lib/api/**", "src/lib/api/**"];
-}
-
-export function lineOf(content: string, pattern: RegExp): number {
-  const lines = content.split(/\r?\n/);
-  const index = lines.findIndex((line) => pattern.test(line));
-  return index >= 0 ? index + 1 : 1;
+    : [
+      "**/api/**",
+      "**/server/**",
+      "**/*-api/**",
+      "**/api.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+      "**/*.api.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+      "lib/api/**",
+      "src/lib/api/**",
+    ];
 }
 
 export function finding(file: AuditFile, rule: string, code: string, line: number, ref?: string): AuditFinding {
@@ -50,40 +80,75 @@ export function finding(file: AuditFile, rule: string, code: string, line: numbe
   };
 }
 
-export function importSpecs(file: AuditFile): Array<{ spec: string; line: number }> {
-  const specs: Array<{ spec: string; line: number }> = [];
-  const patterns = [
-    /^\s*import\s+(?:type\s+)?(?:[^'"]+\s+from\s+)?["']([^"']+)["']/,
-    /^\s*export\s+[^'"]+\s+from\s+["']([^"']+)["']/,
-  ];
-
-  file.lines.forEach((line, index) => {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (match?.[1]) {
-        specs.push({ spec: match[1], line: index + 1 });
-      }
-    }
-  });
-
-  return specs;
+export function isConfigFile(path: string): boolean {
+  const parts = basename(path).split(".");
+  const extension = parts.at(-1) ?? "";
+  return parts.length >= 3 && parts.at(-2) === "config" && sourceExtensions.has(extension);
 }
 
-export function resolveImportPath(file: AuditFile, spec: string): string {
-  if (spec.startsWith(".")) {
-    return toPosix(normalize(join(dirname(file.path), spec)));
+export function isTestFile(path: string): boolean {
+  if (path.startsWith("tests/") || path.endsWith(".d.ts")) {
+    return true;
   }
 
-  return spec.replace(/^@\/?/, "").replace(/^~\/?/, "");
+  const parts = basename(path).split(".");
+  const extension = parts.at(-1) ?? "";
+  const marker = parts.at(-2);
+  return sourceExtensions.has(extension) && (marker === "test" || marker === "spec");
 }
 
-export function isConfigFile(path: string): boolean {
-  return /(^|\/)[^/]*\.config\.[cm]?[jt]sx?$/.test(path);
+export function isNextEntryPath(path: string, entry: "page" | "layout"): boolean {
+  const parts = path.split("/");
+  const appIndex = parts[0] === "app" ? 0 : parts[0] === "src" && parts[1] === "app" ? 1 : -1;
+  if (appIndex === -1 || parts.length <= appIndex + 1) {
+    return false;
+  }
+
+  const file = parts.at(-1)?.split(".") ?? [];
+  return file.length === 2 && file[0] === entry && sourceExtensions.has(file[1] ?? "");
 }
 
-export function firstImportIndex(file: AuditFile): number {
-  const index = file.lines.findIndex((line) => line.trim().startsWith("import "));
-  return index >= 0 ? index : file.lines.length;
+export function callTarget(expression: Expression): string | undefined {
+  const current = unwrapExpression(expression);
+  if (Node.isIdentifier(current)) {
+    return current.getText();
+  }
+  if (Node.isPropertyAccessExpression(current)) {
+    const owner = callTarget(current.getExpression());
+    return owner ? `${owner}.${current.getName()}` : undefined;
+  }
+  return undefined;
+}
+
+export function environmentAccesses(file: AuditFile): Array<{ name: string; line: number; public: boolean }> {
+  if (!file.sourceFile) {
+    return [];
+  }
+
+  return file.sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression).flatMap((access) => {
+    const environment = access.getExpression();
+    if (!Node.isPropertyAccessExpression(environment) || environment.getName() !== "env") {
+      return [];
+    }
+
+    const owner = environment.getExpression();
+    const processEnv = Node.isIdentifier(owner) && owner.getText() === "process";
+    const importMetaEnv = Node.isMetaProperty(owner) && owner.getText() === "import.meta";
+    if (!processEnv && !importMetaEnv) {
+      return [];
+    }
+
+    const name = access.getName();
+    return [{
+      name,
+      line: access.getStartLineNumber(),
+      public: name.startsWith("NEXT_PUBLIC_") || name.startsWith("VITE_"),
+    }];
+  });
+}
+
+export function splitTextLines(content: string): string[] {
+  return content.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
 }
 
 export function hasGeneratedClientDependency(rootDir: string): boolean {
@@ -99,4 +164,18 @@ export function hasGeneratedClientDependency(rootDir: string): boolean {
 
 export function toPosix(path: string): string {
   return path.replaceAll("\\", "/");
+}
+
+function unwrapExpression(expression: Expression): Expression {
+  let current = expression;
+  while (
+    Node.isParenthesizedExpression(current)
+    || Node.isAsExpression(current)
+    || Node.isTypeAssertion(current)
+    || Node.isNonNullExpression(current)
+    || Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
 }

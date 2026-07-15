@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
-import type { AuditRule } from "../rule.js";
-import { finding } from "./helpers.js";
+import { SyntaxKind } from "ts-morph";
+import type { AuditFile, AuditRule } from "../rule.js";
+import { finding, isNextEntryPath } from "./helpers.js";
 
 export const errorLoadingBoundaryRules: AuditRule[] = [
   {
@@ -12,7 +13,7 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
     kind: "project",
     check(context) {
       return context.files.flatMap((file) => {
-        if (!/(^|\/)app\/.+\/page\.tsx?$/.test(file.path) || !/\b(async|await)\b/.test(file.content)) {
+        if (!isNextEntryPath(file.path, "page") || !isAsyncPage(file)) {
           return [];
         }
 
@@ -24,22 +25,39 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
   },
 ];
 
+function isAsyncPage(file: AuditFile): boolean {
+  if (!file.sourceFile) {
+    return false;
+  }
+
+  if (file.sourceFile.getDescendantsOfKind(SyntaxKind.AwaitExpression).length > 0) {
+    return true;
+  }
+
+  return file.sourceFile.getFunctions().some((declaration) => declaration.isAsync())
+    || file.sourceFile.getDescendantsOfKind(SyntaxKind.ArrowFunction).some((declaration) => declaration.isAsync())
+    || file.sourceFile.getDescendantsOfKind(SyntaxKind.FunctionExpression).some((declaration) => declaration.isAsync());
+}
+
 function hasBoundaryInBranch(pagePath: string, allPaths: Set<string>): boolean {
   let current = dirname(pagePath);
 
-  while (current.includes("/app/") || current.endsWith("/app") || current === "app" || current === "src/app") {
+  while (isAppDirectory(current)) {
     for (const name of ["loading.tsx", "loading.ts", "loading.jsx", "loading.js", "error.tsx", "error.ts", "error.jsx", "error.js"]) {
       if (allPaths.has(`${current}/${name}`)) {
         return true;
       }
     }
 
-    if (current.endsWith("/app") || current === "app" || current === "src/app") {
+    if (current === "app" || current === "src/app") {
       break;
     }
-
     current = dirname(current);
   }
 
   return false;
+}
+
+function isAppDirectory(path: string): boolean {
+  return path === "app" || path === "src/app" || path.startsWith("app/") || path.startsWith("src/app/");
 }

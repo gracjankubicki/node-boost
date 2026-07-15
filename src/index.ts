@@ -1,3 +1,12 @@
+/**
+ * Experimental JavaScript API for the 0.1.x line.
+ *
+ * The CLI and MCP protocols are the stable product surface. Root exports remain
+ * available throughout 0.1.x, but new extension code should wait for the
+ * dedicated `@node-boost/node-boost/plugin` contract planned for 0.2.0.
+ *
+ * @packageDocumentation
+ */
 export {
   architectureEntrySchema,
   featureModulesBoundarySchema,
