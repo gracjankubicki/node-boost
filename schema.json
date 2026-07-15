@@ -34,6 +34,23 @@
         ]
       }
     },
+    "hookAgents": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "codex",
+          "cursor"
+        ]
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "features": {
       "default": {
         "guidelines": true,
@@ -98,6 +115,9 @@
             ]
           },
           {
+            "type": "string"
+          },
+          {
             "type": "object",
             "properties": {
               "name": {
@@ -138,6 +158,21 @@
                   "modern-typescript",
                   "ui-states"
                 ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "variant": {
+                "type": "string"
               }
             },
             "required": [

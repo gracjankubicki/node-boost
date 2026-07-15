@@ -31,6 +31,14 @@ describe("detectStack", () => {
     expect(stack.packages["react-router"].major).toBe(7);
   });
 
+  it("detects Vite React without requiring a router", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-no-router"));
+
+    expect(stack.name).toBe("vite-react");
+    expect(stack.router).toBe("none");
+    expect(stack.packages["react-router"].version).toBeNull();
+  });
+
   it("extracts the minimal version from package ranges", () => {
     expect(extractVersionFromRange("^16.2.9")).toBe("16.2.9");
     expect(extractVersionFromRange("~7.1")).toBe("7.1.0");

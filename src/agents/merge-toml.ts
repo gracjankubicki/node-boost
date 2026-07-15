@@ -19,6 +19,22 @@ export function mergeCodexMcpToml(existingContent: string | null, command: McpCo
   return `${stringify(sortToml(root)).trim()}\n`;
 }
 
+export function removeCodexMcpToml(existingContent: string | null): string | null {
+  if (existingContent === null) {
+    return null;
+  }
+
+  const parsed = existingContent.trim() ? parse(existingContent) : {};
+  const root = isObject(parsed) ? parsed : {};
+  const mcpServers = isObject(root.mcp_servers) ? root.mcp_servers : {};
+  if (!("node-boost" in mcpServers)) {
+    return existingContent;
+  }
+  delete mcpServers["node-boost"];
+  root.mcp_servers = mcpServers;
+  return `${stringify(sortToml(root)).trim()}\n`;
+}
+
 function sortToml(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sortToml);

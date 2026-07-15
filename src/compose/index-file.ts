@@ -16,7 +16,7 @@ export function renderGuidelinesIndex(
   });
 
   const fileLines = guidelines
-    .map((guideline) => `- ${guideline.outputPath}: ${sourceLabel(guideline.sourcePath)}`)
+    .map((guideline) => `- ${guideline.outputPath}: ${sourceLabel(guideline)}`)
     .sort((a, b) => a.localeCompare(b));
 
   return [
@@ -44,8 +44,11 @@ export function renderGuidelinesIndex(
   ].join("\n");
 }
 
-function sourceLabel(sourcePath: string): string {
-  return sourcePath.includes(".node-boost") ? "project override" : "node-boost built-in";
+function sourceLabel(resource: ResourceSelection): string {
+  if (resource.sourcePath.includes(".node-boost")) {
+    return "project override";
+  }
+  return resource.pluginPackage ? `plugin ${resource.pluginPackage}` : "node-boost built-in";
 }
 
 function featureModulesBoundary(architecture: NormalizedArchitecture): string {

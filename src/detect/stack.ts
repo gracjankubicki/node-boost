@@ -37,7 +37,7 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
 
   const name = detectStackName(packages);
   const nextRouter = name === "next" ? await detectNextRouter(rootDir) : null;
-  const router = nextRouter?.router ?? (name === "vite-react" ? "react-router" : "none");
+  const router = nextRouter?.router ?? (name === "vite-react" && packages["react-router"]?.version ? "react-router" : "none");
   const srcDir = nextRouter?.srcDir ?? false;
   const linting = detectLinting(packages);
 
@@ -98,7 +98,7 @@ function detectStackName(packages: Record<string, PackageInfo>): StackName {
     return "next";
   }
 
-  if (packages.react?.version && packages.vite?.version && packages["react-router"]?.version) {
+  if (packages.react?.version && packages.vite?.version) {
     return "vite-react";
   }
 

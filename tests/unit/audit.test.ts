@@ -9,6 +9,7 @@ import { NodeBoostConfigMissingError, runAudit } from "../../src/audit/engine.js
 import { formatClaudeCodeHook } from "../../src/hooks/claude-code.js";
 import { formatCodexHook } from "../../src/hooks/codex.js";
 import { formatCursorHook } from "../../src/hooks/cursor.js";
+import { parseHookPayload } from "../../src/hooks/payload.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -60,6 +61,67 @@ describe("audit engine", () => {
 
       expect(result.ok).toBe(true);
       expect(result.findings).toEqual([]);
+    });
+  });
+
+  it("treats only Vite modules containing JSX as client components", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeMinimalProject(projectRoot, { architectures: ["data-access-layer"] });
+      await writeFile(join(projectRoot, "src", "transport.ts"), 'export const load = () => fetch("/api");\n', "utf8");
+      await writeFile(join(projectRoot, "src", "NotAComponent.tsx"), 'export const load = () => fetch("/api");\n', "utf8");
+      await writeFile(
+        join(projectRoot, "src", "Widget.tsx"),
+        'export function Widget() { fetch("/api"); return <main />; }\n',
+        "utf8",
+      );
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+      const findings = result.findings.filter((finding) => finding.rule === "NB-ARCH-005");
+
+      expect(findings).toEqual([
+        expect.objectContaining({ file: "src/Widget.tsx", line: 1 }),
+      ]);
+    });
+  });
+
+  it("recognizes conventional API files and api-suffixed directories as data layers", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeMinimalProject(projectRoot, { architectures: ["data-access-layer"] });
+      await writeConfig(projectRoot, "next", ["data-access-layer"]);
+      await mkdir(join(projectRoot, "src", "lib"), { recursive: true });
+      await mkdir(join(projectRoot, "src", "workspace-api"), { recursive: true });
+      await mkdir(join(projectRoot, "src", "components"), { recursive: true });
+      await writeFile(join(projectRoot, "src", "lib", "api.ts"), '"use client";\nfetch("/api");\n', "utf8");
+      await writeFile(join(projectRoot, "src", "workspace-api", "client.ts"), '"use client";\nfetch("/api");\n', "utf8");
+      await writeFile(
+        join(projectRoot, "src", "components", "api-card.tsx"),
+        '"use client";\nexport function ApiCard() { fetch("/api"); return <main />; }\n',
+        "utf8",
+      );
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+      const findings = result.findings.filter((finding) => finding.rule === "NB-ARCH-005");
+
+      expect(findings).toEqual([
+        expect.objectContaining({ file: "src/components/api-card.tsx", line: 2 }),
+      ]);
+    });
+  });
+
+  it("does not report unresolved TypeScript modules for stylesheet imports", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeFeatureProject(projectRoot, "public-api", "index");
+      await writeFile(
+        join(projectRoot, "src", "features", "checkout", "View.tsx"),
+        'import "./View.module.css";\nexport function View() { return <main />; }\n',
+        "utf8",
+      );
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+
+      expect(result.findings).not.toContainEqual(
+        expect.objectContaining({ rule: "NB-META-006", ref: "./View.module.css" }),
+      );
     });
   });
 
@@ -137,6 +199,71 @@ describe("audit engine", () => {
     });
   });
 
+  it("keeps full project context for project rules while scanning a base diff", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeMinimalProject(projectRoot, {
+        architectures: ["error-loading-boundaries"],
+      });
+      await mkdir(join(projectRoot, "src", "app", "reports"), { recursive: true });
+      await writeFile(join(projectRoot, "src", "app", "reports", "loading.tsx"), "export default function Loading() { return null; }\n", "utf8");
+      await writeFile(join(projectRoot, "src", "app", "reports", "page.tsx"), "export default function Page() { return null; }\n", "utf8");
+      await git(projectRoot, ["init", "-b", "main"]);
+      await git(projectRoot, ["config", "user.email", "test@example.com"]);
+      await git(projectRoot, ["config", "user.name", "Test"]);
+      await git(projectRoot, ["add", "."]);
+      await git(projectRoot, ["commit", "-m", "base"]);
+      await git(projectRoot, ["checkout", "-b", "feature"]);
+      await writeFile(
+        join(projectRoot, "src", "app", "reports", "page.tsx"),
+        "export default async function Page() { await Promise.resolve(); return null; }\n",
+        "utf8",
+      );
+      await git(projectRoot, ["add", "."]);
+      await git(projectRoot, ["commit", "-m", "async page"]);
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "base", base: "main" });
+
+      expect(result.findings).not.toContainEqual(expect.objectContaining({ rule: "NB-ARCH-010" }));
+    });
+  });
+
+  it("ignores deleted files and nested dependencies and includes mts and cts files", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeMinimalProject(projectRoot, {
+        architectures: ["typed-contracts"],
+      });
+      await mkdir(join(projectRoot, "packages", "web", "node_modules", "nested"), { recursive: true });
+      await writeFile(join(projectRoot, "src", "deleted.ts"), "export const deleted = true;\n", "utf8");
+      await writeFile(join(projectRoot, "src", "renamed.ts"), "export const renamed = true;\n", "utf8");
+      await git(projectRoot, ["init", "-b", "main"]);
+      await git(projectRoot, ["config", "user.email", "test@example.com"]);
+      await git(projectRoot, ["config", "user.name", "Test"]);
+      await git(projectRoot, ["add", "."]);
+      await git(projectRoot, ["commit", "-m", "base"]);
+      await git(projectRoot, ["checkout", "-b", "feature"]);
+      await rm(join(projectRoot, "src", "deleted.ts"));
+      await git(projectRoot, ["mv", "src/renamed.ts", "src/renamed.mts"]);
+      await writeFile(join(projectRoot, "src", "renamed.mts"), "export const renamed = process.env.RENAMED;\n", "utf8");
+      await writeFile(join(projectRoot, "src", "module.mts"), "export const a = process.env.API_A;\n", "utf8");
+      await writeFile(join(projectRoot, "src", "module.cts"), "export const b = process.env.API_B;\n", "utf8");
+      await writeFile(
+        join(projectRoot, "packages", "web", "node_modules", "nested", "ignored.ts"),
+        "export const ignored = process.env.IGNORED;\n",
+        "utf8",
+      );
+
+      const changed = await runAudit({ rootDir: projectRoot, mode: "changed" });
+
+      expectScopeFindings(changed);
+
+      await git(projectRoot, ["add", "."]);
+      await git(projectRoot, ["commit", "-m", "changed source files"]);
+      const base = await runAudit({ rootDir: projectRoot, mode: "base", base: "main" });
+
+      expectScopeFindings(base);
+    });
+  });
+
   it("normalizes changed git paths when the project is a subdirectory", async () => {
     const repoDir = await mkdtemp(join(tmpdir(), "node-boost-monorepo-"));
 
@@ -161,11 +288,14 @@ describe("audit engine", () => {
   });
 
   it("formats hook adapter responses for Claude Code, Codex, and Cursor", async () => {
-    await Promise.all([
+    const [claudePayload, codexPayload, cursorPayload] = await Promise.all([
       readPayload("claude-code-stop.json"),
       readPayload("codex-stop.json"),
       readPayload("cursor-stop.json"),
     ]);
+    expect(parseHookPayload("claude-code", claudePayload).agent).toBe("claude-code");
+    expect(parseHookPayload("codex", codexPayload).agent).toBe("codex");
+    expect(parseHookPayload("cursor", cursorPayload).agent).toBe("cursor");
 
     await withFixture("dirty-next-app", async (projectRoot) => {
       const dirty = await runAudit({ rootDir: projectRoot, mode: "all" });
@@ -175,7 +305,8 @@ describe("audit engine", () => {
 
       expect(claude.exitCode).toBe(2);
       expect(claude.stderr).toContain("node-boost guard found");
-      expect(JSON.parse(codex.stdout)).toMatchObject({ decision: "block" });
+      expect(JSON.parse(codex.stdout)).toMatchObject({ continue: false });
+      expect(JSON.parse(codex.stdout)).toHaveProperty("stopReason");
       expect(JSON.parse(cursor.stdout)).toHaveProperty("followup_message");
     });
 
@@ -206,6 +337,14 @@ const expectedArchitectureRules = [
   "NB-ARCH-013",
   "NB-ARCH-014",
 ];
+
+function expectScopeFindings(result: Awaited<ReturnType<typeof runAudit>>): void {
+  expect(result.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-008", file: "src/module.mts" }));
+  expect(result.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-008", file: "src/module.cts" }));
+  expect(result.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-008", file: "src/renamed.mts" }));
+  expect(result.findings).not.toContainEqual(expect.objectContaining({ file: "src/deleted.ts" }));
+  expect(result.findings).not.toContainEqual(expect.objectContaining({ file: "packages/web/node_modules/nested/ignored.ts" }));
+}
 
 const allArchitectures = [
   { name: "feature-modules", boundary: "public-api" },
@@ -255,7 +394,9 @@ async function writeFeatureProject(projectRoot: string, boundary: "public-api" |
   });
   await mkdir(join(projectRoot, "src/features/cart"), { recursive: true });
   await mkdir(join(projectRoot, "src/features/checkout"), { recursive: true });
+  await mkdir(join(projectRoot, "src/routes"), { recursive: true });
   await writeFile(join(projectRoot, "src/features/cart/index.ts"), "export const cart = {};\n", "utf8");
+  await writeFile(join(projectRoot, "src/routes/app.ts"), "export default {};\n", "utf8");
   await writeFile(join(projectRoot, "src/features/checkout/useCheckout.ts"), `import { cart } from "../cart/${importTarget}";\nimport App from "../../routes/app";\nexport { cart, App };\n`, "utf8");
 }
 
@@ -279,8 +420,8 @@ async function writeConfig(projectRoot: string, stack: string, architectures: un
   );
 }
 
-async function readPayload(name: string): Promise<unknown> {
-  return JSON.parse(await readFile(join(repoRoot, "tests", "fixtures", "hook-payloads", name), "utf8"));
+async function readPayload(name: string): Promise<string> {
+  return readFile(join(repoRoot, "tests", "fixtures", "hook-payloads", name), "utf8");
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

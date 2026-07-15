@@ -1,7 +1,7 @@
-import type { AuditRule } from "../rule.js";
-import { dataLayerGlobs, finding, isClientComponent, isDataLayerFile } from "./helpers.js";
-
-const networkPattern = /\b(fetch\s*\(|axios\.|ky\s*\(|ky\.)/;
+import { basename } from "node:path";
+import { SyntaxKind } from "ts-morph";
+import type { AuditFile, AuditRule } from "../rule.js";
+import { callTarget, dataLayerGlobs, finding, isClientComponent, isDataLayerFile } from "./helpers.js";
 
 export const dataAccessLayerRules: AuditRule[] = [
   {
@@ -10,7 +10,7 @@ export const dataAccessLayerRules: AuditRule[] = [
     architecture: "data-access-layer",
     defaultSeverity: "err",
     stacks: ["next", "vite-react"],
-    kind: "line",
+    kind: "ast",
     check(context) {
       const globs = dataLayerGlobs(context.ruleOptions);
       return context.files.flatMap((file) => {
@@ -28,7 +28,7 @@ export const dataAccessLayerRules: AuditRule[] = [
     architecture: "data-access-layer",
     defaultSeverity: "warn",
     stacks: ["next"],
-    kind: "line",
+    kind: "ast",
     check(context) {
       const globs = dataLayerGlobs(context.ruleOptions);
       return context.files.flatMap((file) => {
@@ -36,16 +36,45 @@ export const dataAccessLayerRules: AuditRule[] = [
           return [];
         }
 
-        return networkFindings(file, "NB-ARCH-006", "raw-fetch-in-rsc").filter((item) => item.code === "raw-fetch-in-rsc");
+        return networkFindings(file, "NB-ARCH-006", "raw-fetch-in-rsc");
       });
     },
   },
 ];
 
-function networkFindings(file: Parameters<typeof finding>[0], rule: string, code: string) {
-  return file.lines.flatMap((line, index) => (networkPattern.test(line) ? [finding(file, rule, code, index + 1)] : []));
+function networkFindings(file: AuditFile, rule: string, code: string) {
+  if (!file.sourceFile) {
+    return [];
+  }
+
+  return file.sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).flatMap((call) =>
+    isNetworkTarget(callTarget(call.getExpression()))
+      ? [finding(file, rule, code, call.getStartLineNumber())]
+      : [],
+  );
 }
 
-function isQueryHook(file: Parameters<typeof finding>[0]): boolean {
-  return /(^|\/)use[A-Z][^/]*\.tsx?$/.test(file.path) && /\buse(Query|Mutation)\s*\(/.test(file.content);
+function isNetworkTarget(target: string | undefined): boolean {
+  return target === "fetch"
+    || target === "ky"
+    || target?.startsWith("axios.") === true
+    || target?.startsWith("ky.") === true;
+}
+
+function isQueryHook(file: AuditFile): boolean {
+  if (!file.sourceFile) {
+    return false;
+  }
+
+  const name = basename(file.path).split(".")[0] ?? "";
+  const hookFile = name.startsWith("use") && isUppercaseLetter(name[3]);
+  return hookFile && file.sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+    const target = callTarget(call.getExpression());
+    const called = target?.split(".").at(-1);
+    return called === "useQuery" || called === "useMutation";
+  });
+}
+
+function isUppercaseLetter(character: string | undefined): boolean {
+  return character !== undefined && character >= "A" && character <= "Z";
 }

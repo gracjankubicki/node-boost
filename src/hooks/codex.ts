@@ -6,7 +6,7 @@ export function formatCodexHook(result: AuditResult): HookResponse {
   if (result.err > 0) {
     return {
       exitCode: 0,
-      stdout: `${JSON.stringify({ decision: "block", reason: renderBlockingReason(result) })}\n`,
+      stdout: `${JSON.stringify({ continue: false, stopReason: renderBlockingReason(result) })}\n`,
       stderr: "",
     };
   }

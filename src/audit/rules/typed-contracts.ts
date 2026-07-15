@@ -1,5 +1,14 @@
-import type { AuditRule } from "../rule.js";
-import { dataLayerGlobs, finding, hasGeneratedClientDependency, isConfigFile, isDataLayerFile } from "./helpers.js";
+import { SyntaxKind } from "ts-morph";
+import type { AuditFile, AuditRule } from "../rule.js";
+import {
+  callTarget,
+  dataLayerGlobs,
+  environmentAccesses,
+  finding,
+  hasGeneratedClientDependency,
+  isConfigFile,
+  isDataLayerFile,
+} from "./helpers.js";
 
 export const typedContractRules: AuditRule[] = [
   {
@@ -8,7 +17,7 @@ export const typedContractRules: AuditRule[] = [
     architecture: "typed-contracts",
     defaultSeverity: "warn",
     stacks: ["next", "vite-react"],
-    kind: "line",
+    kind: "ast",
     check(context) {
       if (hasGeneratedClientDependency(context.rootDir)) {
         return [];
@@ -16,13 +25,13 @@ export const typedContractRules: AuditRule[] = [
 
       const globs = dataLayerGlobs(context.ruleOptions);
       return context.files.flatMap((file) => {
-        if (!isDataLayerFile(file, globs) || /\.s(afe)?parse\s*\(/.test(file.content)) {
+        if (!isDataLayerFile(file, globs) || hasSchemaParser(file) || !file.sourceFile) {
           return [];
         }
 
-        return file.lines.flatMap((line, index) =>
-          /(=\s*await\s+\w+\.json\s*\(|=\s*JSON\.parse\s*\(|as\s+\w+.*await\s+\w+\.json\s*\()/.test(line)
-            ? [finding(file, "NB-ARCH-007", "unvalidated-boundary", index + 1)]
+        return file.sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).flatMap((call) =>
+          isUnvalidatedBoundaryCall(callTarget(call.getExpression()), call.getFirstAncestorByKind(SyntaxKind.AwaitExpression) !== undefined)
+            ? [finding(file, "NB-ARCH-007", "unvalidated-boundary", call.getStartLineNumber())]
             : [],
         );
       });
@@ -34,7 +43,7 @@ export const typedContractRules: AuditRule[] = [
     architecture: "typed-contracts",
     defaultSeverity: "warn",
     stacks: ["next", "vite-react"],
-    kind: "line",
+    kind: "ast",
     check(context) {
       const envFiles = envFileGlobs(context.ruleOptions);
       return context.files.flatMap((file) => {
@@ -42,14 +51,24 @@ export const typedContractRules: AuditRule[] = [
           return [];
         }
 
-        return file.lines.flatMap((line, index) => {
-          const names = [...line.matchAll(/(?:process\.env|import\.meta\.env)\.([A-Z0-9_]+)/g)].map((match) => match[1] ?? "");
-          return names.filter((name) => name !== "NODE_ENV").map((name) => finding(file, "NB-ARCH-008", "env-outside-env-file", index + 1, name));
-        });
+        return environmentAccesses(file)
+          .filter((access) => access.name !== "NODE_ENV")
+          .map((access) => finding(file, "NB-ARCH-008", "env-outside-env-file", access.line, access.name));
       });
     },
   },
 ];
+
+function hasSchemaParser(file: AuditFile): boolean {
+  return file.sourceFile?.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+    const method = callTarget(call.getExpression())?.split(".").at(-1);
+    return method === "parse" || method === "safeParse";
+  }) ?? false;
+}
+
+function isUnvalidatedBoundaryCall(target: string | undefined, awaited: boolean): boolean {
+  return target === "JSON.parse" || (awaited && target?.split(".").at(-1) === "json");
+}
 
 function envFileGlobs(options: Record<string, unknown>): string[] {
   const configured = options.envFiles;

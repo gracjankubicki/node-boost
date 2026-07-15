@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ZodError } from "zod";
 import { normalizeArchitectures, parseNodeBoostConfig, type NodeBoostConfig } from "../config/schema.js";
+import { readTypeScriptConfig } from "../config/typescript-config.js";
 import type { NormalizedArchitecture } from "../types.js";
 
 export interface BoostConfigReadResult {
@@ -29,19 +30,8 @@ export async function readBoostConfig(rootDir: string): Promise<BoostConfigReadR
   }
 }
 
-export async function readTypescriptStrict(rootDir: string): Promise<boolean | null> {
-  try {
-    const raw = await readFile(join(rootDir, "tsconfig.json"), "utf8");
-    const parsed: unknown = JSON.parse(raw);
-
-    if (isObject(parsed) && isObject(parsed.compilerOptions) && typeof parsed.compilerOptions.strict === "boolean") {
-      return parsed.compilerOptions.strict;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
+export function readTypescriptStrict(rootDir: string): boolean | null {
+  return readTypeScriptConfig(rootDir).strict;
 }
 
 function normalizeConfigError(error: unknown): Error {
@@ -59,8 +49,4 @@ function normalizeConfigError(error: unknown): Error {
   }
 
   return new Error("Unknown config error.");
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

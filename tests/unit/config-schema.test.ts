@@ -74,6 +74,32 @@ describe("nodeBoostConfigSchema", () => {
     ]);
   });
 
+  it("parses explicit content plugins and namespaced architecture variants", () => {
+    const config = parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "vite-react",
+      plugins: ["@acme/node-boost-plugin"],
+      architectures: [
+        { name: "@acme/node-boost-plugin:service-layer", variant: "strict" },
+      ],
+    });
+
+    expect(normalizeArchitectures(config)).toEqual([
+      { name: "@acme/node-boost-plugin:service-layer", options: { variant: "strict" } },
+    ]);
+  });
+
+  it("requires plugin architectures to reference a unique configured package", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      plugins: ["@acme/plugin", "@acme/plugin"],
+      architectures: ["@other/plugin:service-layer"],
+    })).toThrow();
+  });
+
   it("rejects invalid architecture variants", () => {
     expect(() =>
       parseNodeBoostConfig({
@@ -111,5 +137,15 @@ describe("nodeBoostConfigSchema", () => {
         stack: "rails",
       }),
     ).toThrow();
+
+    expect(() =>
+      parseNodeBoostConfig({
+        version: 1,
+        generatedWith: "0.1.0",
+        stack: "next",
+        agents: ["codex"],
+        hookAgents: ["cursor"],
+      }),
+    ).toThrow("must also be present in agents");
   });
 });

@@ -18,6 +18,22 @@ export function mergeMcpJson(existingContent: string | null, command: McpCommand
   return `${JSON.stringify(sortJson(root), null, 2)}\n`;
 }
 
+export function removeMcpJson(existingContent: string | null): string | null {
+  if (existingContent === null) {
+    return null;
+  }
+
+  const parsed: unknown = existingContent.trim() ? JSON.parse(existingContent) : {};
+  const root = isObject(parsed) ? parsed : {};
+  const mcpServers = isObject(root.mcpServers) ? root.mcpServers : {};
+  if (!("node-boost" in mcpServers)) {
+    return existingContent;
+  }
+  delete mcpServers["node-boost"];
+  root.mcpServers = mcpServers;
+  return `${JSON.stringify(sortJson(root), null, 2)}\n`;
+}
+
 function sortJson(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sortJson);
