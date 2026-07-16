@@ -187,6 +187,29 @@ describe("install orchestrator", () => {
     });
   });
 
+  it("normalizes legacy Windows ownership paths before update", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const manifestPath = join(projectRoot, ".node-boost/generated-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        files: Array<{ path: string; sha256: string }>;
+      };
+      manifest.files = manifest.files.map((file) => ({ ...file, path: file.path.replaceAll("/", "\\") }));
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+      const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      const updatedManifest = await readFile(manifestPath, "utf8");
+
+      expect(
+        result.operations.every((operation) =>
+          operation.status === "skipped"
+          || (operation.path === ".node-boost/generated-manifest.json" && operation.status === "updated"),
+        ),
+      ).toBe(true);
+      expect(updatedManifest).not.toContain("\\\\");
+    });
+  });
+
   it("unmerges disabled agents, MCP servers, and hooks while preserving foreign content", async () => {
     await withFixture("next-app", async (projectRoot) => {
       await Promise.all([

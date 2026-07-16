@@ -26,16 +26,19 @@ export function hashGeneratedContent(content: string): string {
 }
 
 export function isOwnedGeneratedPath(path: string): boolean {
-  return path.startsWith(".ai/")
-    || path.startsWith(".agents/skills/")
-    || path.startsWith(".claude/skills/")
-    || path === ".cursor/rules/node-boost.mdc";
+  const normalized = normalizeGeneratedPath(path);
+  return normalized.startsWith(".ai/")
+    || normalized.startsWith(".agents/skills/")
+    || normalized.startsWith(".claude/skills/")
+    || normalized === ".cursor/rules/node-boost.mdc";
 }
 
 export async function readGeneratedManifest(projectRoot: string): Promise<GeneratedManifest | null> {
   try {
     const parsed: unknown = JSON.parse(await readFile(join(projectRoot, generatedManifestPath), "utf8"));
-    return isGeneratedManifest(parsed) ? parsed : null;
+    return isGeneratedManifest(parsed)
+      ? { ...parsed, files: parsed.files.map((file) => ({ ...file, path: normalizeGeneratedPath(file.path) })) }
+      : null;
   } catch {
     return null;
   }
@@ -111,13 +114,18 @@ function isGeneratedManifest(value: unknown): value is GeneratedManifest {
     if (!isRecord(file) || typeof file.path !== "string" || typeof file.sha256 !== "string") {
       return false;
     }
-    if (!isOwnedGeneratedPath(file.path) || paths.has(file.path) || !isSha256(file.sha256)) {
+    const normalizedPath = normalizeGeneratedPath(file.path);
+    if (!isOwnedGeneratedPath(normalizedPath) || paths.has(normalizedPath) || !isSha256(file.sha256)) {
       return false;
     }
-    paths.add(file.path);
+    paths.add(normalizedPath);
   }
 
   return true;
+}
+
+function normalizeGeneratedPath(path: string): string {
+  return path.replaceAll("\\", "/");
 }
 
 function isSha256(value: string): boolean {

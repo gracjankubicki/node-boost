@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import type { NormalizedArchitecture, ResourceSelection, StackName } from "../types.js";
 import {
   defineNodeBoostPlugin,
@@ -88,7 +88,7 @@ export function pluginResourceSelections(
     guidelines: architectures.map((architecture) => ({
       kind: "guideline",
       sourcePath: architecture.guidelinePath,
-      outputPath: join(
+      outputPath: posix.join(
         ".ai",
         "guidelines",
         "architectures",
@@ -101,7 +101,7 @@ export function pluginResourceSelections(
     skills: architectures.map((architecture) => ({
       kind: "skill",
       sourcePath: architecture.skillPath,
-      outputPath: join(
+      outputPath: posix.join(
         ".ai",
         "skills",
         "plugins",
