@@ -202,7 +202,23 @@
           "default": {},
           "type": "object",
           "propertyNames": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "NB-ARCH-001",
+              "NB-ARCH-002",
+              "NB-ARCH-003",
+              "NB-ARCH-004",
+              "NB-ARCH-005",
+              "NB-ARCH-006",
+              "NB-ARCH-007",
+              "NB-ARCH-008",
+              "NB-ARCH-009",
+              "NB-ARCH-010",
+              "NB-ARCH-011",
+              "NB-ARCH-012",
+              "NB-ARCH-013",
+              "NB-ARCH-014"
+            ]
           },
           "additionalProperties": {
             "type": "string",
@@ -216,15 +232,136 @@
         "ruleOptions": {
           "default": {},
           "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
+          "additionalProperties": false,
+          "properties": {
+            "NB-ARCH-001": {
+              "type": "object",
+              "properties": {
+                "featuresDir": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
             },
-            "additionalProperties": {}
+            "NB-ARCH-002": {
+              "type": "object",
+              "properties": {
+                "featuresDir": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-003": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ARCH-004": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ARCH-005": {
+              "type": "object",
+              "properties": {
+                "dataLayerGlobs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-006": {
+              "type": "object",
+              "properties": {
+                "dataLayerGlobs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-007": {
+              "type": "object",
+              "properties": {
+                "dataLayerGlobs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-008": {
+              "type": "object",
+              "properties": {
+                "envFiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-009": {
+              "type": "object",
+              "properties": {
+                "dataLayerGlobs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-010": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ARCH-011": {
+              "type": "object",
+              "properties": {
+                "sanitizers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "NB-ARCH-012": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ARCH-013": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ARCH-014": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
           }
         }
       },

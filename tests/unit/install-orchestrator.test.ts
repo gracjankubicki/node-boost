@@ -128,7 +128,7 @@ describe("install orchestrator", () => {
       await removeArchitecture(projectRoot, "feature-modules");
 
       const beforeUpdate = await doctorTool(projectRoot, "0.1.0");
-      expect(beforeUpdate.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "warn" }));
+      expect(beforeUpdate.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "fail" }));
 
       const first = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
       expect(first.operations).toContainEqual(expect.objectContaining({
@@ -162,7 +162,7 @@ describe("install orchestrator", () => {
 
       const doctor = await doctorTool(projectRoot, "0.1.0");
       const freshness = doctor.checks.find((check) => check.id === "resources-fresh");
-      expect(freshness).toMatchObject({ status: "warn" });
+      expect(freshness).toMatchObject({ status: "fail" });
       expect(freshness?.details).toContain(`modified: ${modifiedPath}`);
     });
   });
@@ -184,6 +184,29 @@ describe("install orchestrator", () => {
       };
       expect(manifest.version).toBe(1);
       expect(manifest.files.some((file) => file.path === stalePath)).toBe(false);
+    });
+  });
+
+  it("normalizes legacy Windows ownership paths before update", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const manifestPath = join(projectRoot, ".node-boost/generated-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        files: Array<{ path: string; sha256: string }>;
+      };
+      manifest.files = manifest.files.map((file) => ({ ...file, path: file.path.replaceAll("/", "\\") }));
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+      const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      const updatedManifest = await readFile(manifestPath, "utf8");
+
+      expect(
+        result.operations.every((operation) =>
+          operation.status === "skipped"
+          || (operation.path === ".node-boost/generated-manifest.json" && operation.status === "updated"),
+        ),
+      ).toBe(true);
+      expect(updatedManifest).not.toContain("\\\\");
     });
   });
 

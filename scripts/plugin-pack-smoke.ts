@@ -20,9 +20,12 @@ try {
   await run("npm", ["ci"], checkoutRoot);
   const nodeBoostTarball = await pack(checkoutRoot);
   const pluginRoot = join(checkoutRoot, "examples", "service-layer-plugin");
-  const pluginSource = await readFile(join(pluginRoot, "index.js"), "utf8");
-  if (!pluginSource.includes('from "@node-boost/node-boost/plugin"') || pluginSource.includes("/dist/") || pluginSource.includes("/src/")) {
-    throw new Error("Example plugin must use only the public node-boost plugin subpath.");
+  const pluginManifest = JSON.parse(await readFile(join(pluginRoot, "node-boost.plugin.json"), "utf8")) as {
+    apiVersion?: unknown;
+    name?: unknown;
+  };
+  if (pluginManifest.apiVersion !== 1 || pluginManifest.name !== pluginName) {
+    throw new Error("Example plugin must provide the versioned static node-boost.plugin.json manifest.");
   }
   const pluginTarball = await pack(pluginRoot);
 

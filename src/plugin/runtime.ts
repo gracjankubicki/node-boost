@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 import { readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import type { NormalizedArchitecture, ResourceSelection, StackName } from "../types.js";
 import {
   defineNodeBoostPlugin,
@@ -89,7 +88,7 @@ export function pluginResourceSelections(
     guidelines: architectures.map((architecture) => ({
       kind: "guideline",
       sourcePath: architecture.guidelinePath,
-      outputPath: join(
+      outputPath: posix.join(
         ".ai",
         "guidelines",
         "architectures",
@@ -102,7 +101,7 @@ export function pluginResourceSelections(
     skills: architectures.map((architecture) => ({
       kind: "skill",
       sourcePath: architecture.skillPath,
-      outputPath: join(
+      outputPath: posix.join(
         ".ai",
         "skills",
         "plugins",
@@ -121,19 +120,35 @@ function architectureId(packageName: string, slug: string): string {
 
 async function loadPlugin(projectRoot: string, packageName: string): Promise<LoadedNodeBoostPlugin> {
   const require = createRequire(join(projectRoot, "package.json"));
-  let entryPath: string;
+  let manifestPath: string;
   try {
-    entryPath = require.resolve(packageName);
+    manifestPath = require.resolve(`${packageName}/node-boost.plugin.json`);
   } catch (error) {
-    throw new Error(`Cannot resolve node-boost plugin ${packageName} from ${projectRoot}.`, { cause: error });
+    try {
+      require.resolve(packageName);
+    } catch {
+      throw new Error(`Cannot resolve node-boost plugin ${packageName} from ${projectRoot}.`, { cause: error });
+    }
+    throw new Error(
+      `Node-boost plugin ${packageName} uses the unsupported executable entrypoint contract. Export ./node-boost.plugin.json instead.`,
+      { cause: error },
+    );
   }
 
-  const packageRoot = await findPackageRoot(entryPath, packageName);
-  const imported = await import(pathToFileURL(entryPath).href) as { default?: unknown };
-  if (imported.default === undefined) {
-    throw new Error(`Node-boost plugin ${packageName} must export its definition as default.`);
+  const packageRoot = await findPackageRoot(manifestPath, packageName);
+  const resolvedManifest = await realpath(manifestPath);
+  if (isOutside(packageRoot, resolvedManifest)) {
+    throw new Error(`Node-boost plugin ${packageName} manifest escapes its package.`);
   }
-  const definition = defineNodeBoostPlugin(imported.default as NodeBoostPluginDefinition);
+
+  let input: unknown;
+  try {
+    input = JSON.parse(await readFile(resolvedManifest, "utf8"));
+  } catch (error) {
+    throw new Error(`Cannot read node-boost plugin manifest for ${packageName}.`, { cause: error });
+  }
+
+  const definition = defineNodeBoostPlugin(input as NodeBoostPluginDefinition);
   if (definition.name !== packageName) {
     throw new Error(`Node-boost plugin ${packageName} declares mismatched name ${definition.name}.`);
   }

@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { DetectedStack, NormalizedArchitecture, ResourceSelection } from "../types.js";
 import { listResourceFiles } from "./resources.js";
 
@@ -51,13 +51,13 @@ export async function composeGuidelines(
     .map((file) => ({
       kind: "guideline",
       sourcePath: join("resources", "react", "guidelines", file),
-      outputPath: join(".ai", "guidelines", file),
+      outputPath: posix.join(".ai", "guidelines", file),
     }) satisfies ResourceSelection);
 
   const architectureGuidelines = architectures.map((architecture) => ({
     kind: "guideline",
     sourcePath: join("resources", "react", "architectures", architecture.name, architectureVariantPath(architecture)),
-    outputPath: join(".ai", "guidelines", "architectures", `${architecture.name}.md`),
+    outputPath: posix.join(".ai", "guidelines", "architectures", `${architecture.name}.md`),
   }) satisfies ResourceSelection);
 
   return [...packageGuidelines, ...architectureGuidelines].sort((a, b) => a.outputPath.localeCompare(b.outputPath));

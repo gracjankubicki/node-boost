@@ -10,6 +10,8 @@ import { createTypeScriptModuleResolver } from "./typescript-resolver.js";
 import type { AuditFile, AuditFinding, AuditResult } from "./rule.js";
 import { splitTextLines } from "./rules/helpers.js";
 
+const maxAuditFileBytes = 2 * 1024 * 1024;
+
 export interface RunAuditOptions {
   rootDir?: string;
   mode?: "all" | "changed" | "base" | "paths";
@@ -146,6 +148,24 @@ async function readAuditFiles(rootDir: string, files: string[], parseWarnings: A
       });
       if (content === null) {
         return null;
+      }
+
+      if (Buffer.byteLength(content, "utf8") > maxAuditFileBytes) {
+        parseWarnings.push({
+          rule: "NB-META-003",
+          sev: "warn",
+          file,
+          line: 1,
+          code: "file-too-large",
+        });
+        return {
+          path: file,
+          absolutePath,
+          content,
+          lines: [],
+          sourceFile: null,
+          skipped: true,
+        };
       }
 
       const started = performance.now();

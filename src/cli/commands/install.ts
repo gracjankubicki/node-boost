@@ -18,6 +18,7 @@ export const installCommand = defineCommand({
     const counts = countStatuses(result.operations);
 
     console.log(`node-boost install: created ${counts.created}, updated ${counts.updated}, deleted ${counts.deleted}, conflicts ${counts.conflict}, skipped ${counts.skipped}`);
+    process.exitCode = counts.conflict > 0 ? 1 : 0;
   },
 });
 

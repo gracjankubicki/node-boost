@@ -100,6 +100,56 @@ describe("nodeBoostConfigSchema", () => {
     })).toThrow();
   });
 
+  it("rejects unknown audit rule identifiers instead of silently ignoring them", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: { "NB-ARCH-015": "err" },
+        ruleOptions: {},
+      },
+    })).toThrow("Unknown audit rule NB-ARCH-015");
+  });
+
+  it("rejects options for unknown audit rules", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: {},
+        ruleOptions: { "NB-ARCH-999": {} },
+      },
+    })).toThrow("Unknown audit rule NB-ARCH-999");
+  });
+
+  it("rejects unsupported and mistyped options for known audit rules", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: {},
+        ruleOptions: { "NB-ARCH-005": { dataLayerGlob: ["src/api/**"] } },
+      },
+    })).toThrow("Unrecognized key");
+
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: {},
+        ruleOptions: { "NB-ARCH-011": { sanitizers: "DOMPurify.sanitize" } },
+      },
+    })).toThrow();
+  });
+
   it("rejects invalid architecture variants", () => {
     expect(() =>
       parseNodeBoostConfig({

@@ -4,12 +4,14 @@
   "description": "Example content-only architecture plugin for node-boost.",
   "type": "module",
   "license": "MIT",
-  "exports": "./index.js",
+  "exports": {
+    "./node-boost.plugin.json": "./node-boost.plugin.json"
+  },
   "files": [
-    "index.js",
+    "node-boost.plugin.json",
     "resources"
   ],
   "peerDependencies": {
-    "@node-boost/node-boost": "^0.2.0"
+    "@node-boost/node-boost": "^0.3.0"
   }
 }

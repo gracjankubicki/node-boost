@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { DetectedStack, NormalizedArchitecture, ResourceSelection } from "../types.js";
 import { listResourceFiles } from "./resources.js";
 
@@ -36,13 +36,13 @@ export async function composeSkills(
     .map((file) => ({
       kind: "skill",
       sourcePath: join("resources", "react", "skills", file),
-      outputPath: join(".ai", "skills", file),
+      outputPath: posix.join(".ai", "skills", file),
     }) satisfies ResourceSelection);
 
   const architectureSkills = architectures.map((architecture) => ({
     kind: "skill",
     sourcePath: join("resources", "react", "architectures", architecture.name, "skill", "SKILL.md"),
-    outputPath: join(".ai", "skills", architecture.name, "SKILL.md"),
+    outputPath: posix.join(".ai", "skills", architecture.name, "SKILL.md"),
   }) satisfies ResourceSelection);
 
   return [...packageSkills, ...architectureSkills].sort((a, b) => a.outputPath.localeCompare(b.outputPath));
