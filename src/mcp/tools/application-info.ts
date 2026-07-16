@@ -17,6 +17,10 @@ export interface ApplicationInfo {
     srcDir: boolean;
   };
   linting: string;
+  capabilities: {
+    reactCompiler: boolean;
+    nextCacheComponents: boolean;
+  };
   packages: Record<string, string>;
   boost: {
     version: string;
@@ -44,6 +48,7 @@ export async function applicationInfoTool(rootDir: string, boostVersion: string)
       srcDir: stack.srcDir,
     },
     linting: stack.linting,
+    capabilities: stack.capabilities,
     packages: detectedPackages(stack.packages),
     boost: boostConfig.config
       ? {

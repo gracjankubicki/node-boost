@@ -6,6 +6,7 @@ import { agentInstallers } from "../agents/index.js";
 import { createHookCommand, createMcpCommand, type FileOperation } from "../agents/agent.js";
 import { applyResourceOverrides } from "../compose/overrides.js";
 import { composeGuidelines } from "../compose/guidelines.js";
+import { renderLibraryDocumentationLlmsTxt } from "../compose/library-docs.js";
 import { composeSkills } from "../compose/skills.js";
 import { renderGuidelinesIndex } from "../compose/index-file.js";
 import {
@@ -129,6 +130,7 @@ export async function buildInstallOperations(input: {
     agentInstallers[agentName]
       .render({
         guidelinesIndexPath: ".ai/guidelines/node-boost.md",
+        libraryDocsPath: ".ai/docs/llms.txt",
         skillsIndexPath: ".ai/skills",
         selectedSkills,
         existingContent: (path) => existingContent.get(path) ?? null,
@@ -140,6 +142,10 @@ export async function buildInstallOperations(input: {
   );
 
   return dedupeOperations([
+    {
+      path: ".ai/docs/llms.txt",
+      content: renderLibraryDocumentationLlmsTxt(input.stack),
+    },
     ...guidelineOperations,
     {
       path: ".ai/guidelines/node-boost.md",
@@ -273,9 +279,10 @@ async function promptForConfig(packageRoot: string, projectRoot: string, stack: 
 async function promptArchitectures(projectRoot: string, stack: DetectedStack): Promise<ArchitectureConfigEntry[]> {
   const adapter = getStackAdapter(stack);
   const recommended = adapter?.recommendedArchitectures(stack) ?? [];
+  const applicable = adapter?.applicableArchitectures(stack) ?? [];
   const selected = await multiselect<ArchitectureSlug>({
     message: "Select architecture guidance",
-    options: recommended.map((architecture) => ({ label: architecture, value: architecture })),
+    options: applicable.map((architecture) => ({ label: architecture, value: architecture })),
     initialValues: recommended,
     required: false,
   });
@@ -304,9 +311,16 @@ async function promptArchitectures(projectRoot: string, stack: DetectedStack): P
 async function defaultArchitectures(projectRoot: string, stack: DetectedStack): Promise<ArchitectureConfigEntry[]> {
   const adapter = getStackAdapter(stack);
   const architectures = adapter?.recommendedArchitectures(stack) ?? [];
+  const hasFeatureModules =
+    (await pathExists(join(projectRoot, "features"))) || (await pathExists(join(projectRoot, "src", "features")));
+
+  if (hasFeatureModules && adapter?.applicableArchitectures(stack).includes("feature-modules")) {
+    architectures.push("feature-modules");
+  }
+
   const featureModulesBoundary = await suggestFeatureModulesBoundary(projectRoot);
 
-  return architectures.map((architecture) =>
+  return [...new Set(architectures)].map((architecture) =>
     architecture === "feature-modules" ? { name: "feature-modules", boundary: featureModulesBoundary } : architecture,
   );
 }

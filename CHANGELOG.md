@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Added a generated `.ai/docs/llms.txt` library index, deterministic version-aware documentation routing, agent instructions, and the `library_docs` MCP tool.
+- Made resource composition capability-aware: added explicit React Compiler/Cache Components detection plus Next 14, React Router 6, SWR, Valibot, React Hook Form, Storybook, Mantine, localization, MSW, rich-text, and generated-client guidance.
+- Stopped treating React 19 as proof of React Compiler and Next 16 as proof of Cache Components; corrected the React 19 optimistic-update example.
+- Replaced raw-HTML regex checks with AST-based JSX/parser sink detection and removed the project-wide runtime-validation exemption for generated API clients.
+- Made non-interactive architecture selection conservative, inferring feature-module boundaries only from an existing feature tree and avoiding duplicate Tailwind/testing skills.
+- Improved JSONC tsconfig parsing, generated-file exclusions, remote-data boundary detection, and server-state audit heuristics.
+
 ## 0.1.0 - 2026-07-08
 
 - Initial React-focused release of node-boost.

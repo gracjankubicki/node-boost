@@ -21,6 +21,7 @@ describe("install orchestrator", () => {
       expect(afterSecond).toEqual(afterFirst);
 
       await expectPath(projectRoot, ".ai/guidelines/node-boost.md");
+      await expectPath(projectRoot, ".ai/docs/llms.txt");
       await expectPath(projectRoot, ".ai/skills/react-development/SKILL.md");
       await expectPath(projectRoot, ".agents/skills/react-development/SKILL.md");
       await expectPath(projectRoot, ".claude/skills/react-development/SKILL.md");
@@ -75,8 +76,10 @@ describe("install orchestrator", () => {
 
       expect(claude).toContain("before claude\n\nafter claude");
       expect(claude).toContain("<!-- node-boost:start -->");
+      expect(claude).toContain(".ai/docs/llms.txt");
       expect(agents).toContain("before agents\n\nafter agents");
       expect(agents).toContain(".agents/skills");
+      expect(agents).toContain(".ai/docs/llms.txt");
       expect(mcpJson.mcpServers.other).toEqual({ command: "other", args: ["serve"] });
       expect(mcpJson.mcpServers["node-boost"]).toEqual({ command: "npm", args: ["exec", "node-boost", "mcp"] });
       expect(codexToml).toContain("[mcp_servers.other]");
@@ -84,8 +87,22 @@ describe("install orchestrator", () => {
     });
   });
 
-  it("uses feature-modules forbid variant and writes object config", async () => {
+  it("does not impose feature modules on a project without a feature tree", async () => {
     await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+
+      const config = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
+        architectures: unknown[];
+      };
+      expect(config.architectures).not.toContain("feature-modules");
+      expect(config.architectures).not.toContainEqual(expect.objectContaining({ name: "feature-modules" }));
+      await expect(readFile(join(projectRoot, ".ai/guidelines/architectures/feature-modules.md"), "utf8")).rejects.toThrow();
+    });
+  });
+
+  it("infers a public-api boundary for an established feature tree", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await mkdir(join(projectRoot, "src", "features", "invoices"), { recursive: true });
       await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
 
       const config = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
@@ -93,8 +110,8 @@ describe("install orchestrator", () => {
       };
       const guideline = await readFile(join(projectRoot, ".ai/guidelines/architectures/feature-modules.md"), "utf8");
 
-      expect(config.architectures).toContainEqual({ name: "feature-modules", boundary: "forbid" });
-      expect(guideline).toContain("# Feature Modules (forbid boundary)");
+      expect(config.architectures).toContainEqual({ name: "feature-modules", boundary: "public-api" });
+      expect(guideline).toContain("# Feature Modules (public-api boundary)");
     });
   });
 

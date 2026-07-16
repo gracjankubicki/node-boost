@@ -12,7 +12,7 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
     kind: "project",
     check(context) {
       return context.files.flatMap((file) => {
-        if (!/(^|\/)app\/.+\/page\.tsx?$/.test(file.path) || !/\b(async|await)\b/.test(file.content)) {
+        if (!/(^|\/)app\/.+\/page\.tsx?$/.test(file.path) || !fetchesRemoteData(file.content)) {
           return [];
         }
 
@@ -23,6 +23,13 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
     },
   },
 ];
+
+function fetchesRemoteData(content: string): boolean {
+  return (
+    /\b(?:fetch|axios\.(?:get|post|put|patch|delete)|ky(?:\.[a-z]+)?)\s*\(/.test(content) ||
+    /from\s+["'][^"']*(?:\/api\/|\/server\/|\/data\/)[^"']*["']/.test(content)
+  );
+}
 
 function hasBoundaryInBranch(pagePath: string, allPaths: Set<string>): boolean {
   let current = dirname(pagePath);

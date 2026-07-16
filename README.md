@@ -13,7 +13,7 @@ npx node-boost install
 
 The npm package is published as `@node-boost/node-boost`; the installed CLI binary is `node-boost`.
 
-The installer detects your stack, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, and configures selected agents:
+The installer detects your stack, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, generates `.ai/docs/llms.txt`, and configures selected agents:
 
 - Claude Code: `CLAUDE.md`, `.claude/skills/**`, `.mcp.json`, optional `.claude/settings.json` hooks.
 - Codex: `AGENTS.md`, `.agents/skills/**`, `.codex/config.toml`, optional `.codex/hooks.json`.
@@ -43,10 +43,22 @@ npx node-boost doctor --agent
 | Tool | Purpose |
 | --- | --- |
 | `application_info` | Return detected stack, package manager, packages, routes, and node-boost config summary. |
+| `library_docs` | Return version-aware official documentation routes and exact package references. |
 | `list_routes` | List Next app routes, including route handlers and parallel slots. |
 | `doctor` | Run the same full checks as `node-boost doctor`. |
 | `audit` | Run `node-boost audit --all` and return JSON. |
 | `explain_finding` | Explain a rule such as `NB-ARCH-005`. |
+
+## Library Documentation
+
+`install` and `update` generate `.ai/docs/llms.txt` from the detected dependency versions. Agents are instructed to use its version-matched routes before current-only documentation.
+
+The routing policy is conservative:
+
+- Prefer an official exact- or major-version archive when one is available.
+- Otherwise use the exact npm package version as the primary reference and list current upstream docs as secondary.
+- Keep upstream `llms.txt` files as secondary when they describe only the current release.
+- When `node_modules` is unavailable, label versions as inferred from declared ranges. Install dependencies and run `node-boost update` to pin the resolved versions.
 
 ## Architecture Patterns
 
@@ -185,7 +197,7 @@ Keep implementation planning local unless your team wants to publish it:
 implementation-plans/
 ```
 
-Generated `.ai/**`, agent files, and `node-boost.json` are intended to be committed in consumer projects.
+Generated `.ai/**`, including `.ai/docs/llms.txt`, agent files, and `node-boost.json` are intended to be committed in consumer projects.
 
 ## Roadmap
 

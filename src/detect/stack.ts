@@ -9,11 +9,31 @@ const trackedPackages = [
   "react",
   "vite",
   "react-router",
+  "react-router-dom",
   "typescript",
   "tailwindcss",
   "zod",
+  "valibot",
   "@tanstack/react-query",
+  "react-query-kit",
+  "swr",
   "zustand",
+  "nuqs",
+  "react-hook-form",
+  "msw",
+  "storybook",
+  "@storybook/react",
+  "@mantine/core",
+  "i18next",
+  "react-i18next",
+  "@lingui/core",
+  "html-react-parser",
+  "dompurify",
+  "isomorphic-dompurify",
+  "sanitize-html",
+  "orval",
+  "openapi-typescript",
+  "babel-plugin-react-compiler",
   "vitest",
   "jest",
   "playwright",
@@ -40,6 +60,7 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
   const router = nextRouter?.router ?? (name === "vite-react" ? "react-router" : "none");
   const srcDir = nextRouter?.srcDir ?? false;
   const linting = detectLinting(packages);
+  const capabilities = await detectCapabilities(rootDir);
 
   if (Object.values(packages).some((pkg) => pkg.source === "range")) {
     warnings.push("node_modules not available for at least one package; using declared version range fallback.");
@@ -53,7 +74,40 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
     linting,
     packageManager,
     packages,
+    capabilities,
     warnings,
+  };
+}
+
+async function detectCapabilities(rootDir: string): Promise<DetectedStack["capabilities"]> {
+  const configFiles = [
+    "next.config.js",
+    "next.config.mjs",
+    "next.config.cjs",
+    "next.config.ts",
+    "next.config.mts",
+    "next.config.cts",
+    "vite.config.js",
+    "vite.config.mjs",
+    "vite.config.cjs",
+    "vite.config.ts",
+    "vite.config.mts",
+    "vite.config.cts",
+    "babel.config.js",
+    "babel.config.mjs",
+    "babel.config.cjs",
+    "babel.config.ts",
+    ".babelrc",
+    ".babelrc.json",
+  ];
+  const contents = await Promise.all(
+    configFiles.map((file) => readFile(join(rootDir, file), "utf8").catch(() => "")),
+  );
+  const combined = contents.join("\n");
+
+  return {
+    reactCompiler: /\breactCompiler\s*:\s*(?:true|\{)/.test(combined) || /babel-plugin-react-compiler/.test(combined),
+    nextCacheComponents: /\bcacheComponents\s*:\s*true/.test(combined),
   };
 }
 
@@ -98,7 +152,11 @@ function detectStackName(packages: Record<string, PackageInfo>): StackName {
     return "next";
   }
 
-  if (packages.react?.version && packages.vite?.version && packages["react-router"]?.version) {
+  if (
+    packages.react?.version &&
+    packages.vite?.version &&
+    (packages["react-router"]?.version || packages["react-router-dom"]?.version)
+  ) {
     return "vite-react";
   }
 

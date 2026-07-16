@@ -11,7 +11,7 @@ Use when styling components or touching Tailwind configuration.
 
 ## Procedure
 
-1. Check the Tailwind major first: v4 = CSS-first config (`@theme`, no `tailwind.config.js`); v3 = JS config + `content` globs. Follow the versioned guideline.
+1. Check the Tailwind major and current configuration. v4 is CSS-first (`@theme`) but can deliberately load legacy JS configuration through `@config`; v3 uses JS config + `content` globs.
 2. Use theme tokens; introduce new tokens in the theme, not arbitrary values.
 3. Variants with `cva` + `tailwind-merge`; conditionals through `cn()` — never interpolate class fragments (`text-${x}-500` doesn't exist in the build).
 4. Repeated class strings → extract a `components/ui/` component instead of `@apply`.

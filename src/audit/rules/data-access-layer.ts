@@ -47,5 +47,8 @@ function networkFindings(file: Parameters<typeof finding>[0], rule: string, code
 }
 
 function isQueryHook(file: Parameters<typeof finding>[0]): boolean {
-  return /(^|\/)use[A-Z][^/]*\.tsx?$/.test(file.path) && /\buse(Query|Mutation)\s*\(/.test(file.content);
+  return (
+    /(^|\/)use[A-Z][^/]*\.tsx?$/.test(file.path) &&
+    /\b(?:use(?:Query|Mutation)|useSWR(?:Infinite|Mutation)?)\s*\(/.test(file.content)
+  );
 }

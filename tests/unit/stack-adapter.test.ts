@@ -16,8 +16,9 @@ describe("stack adapters", () => {
     expect(adapter?.recommendedArchitectures(stack)).toContain("error-loading-boundaries");
     expect(adapter?.recommendedArchitectures(stack)).toContain("secure-by-default");
     expect(adapter?.recommendedArchitectures(stack)).toContain("modern-typescript");
-    expect(adapter?.recommendedArchitectures(stack)).toContain("ui-states");
     expect(adapter?.recommendedArchitectures(stack)).toContain("styling-tailwind");
+    expect(adapter?.recommendedArchitectures(stack)).not.toContain("feature-modules");
+    expect(adapter?.recommendedArchitectures(stack)).not.toContain("component-composition");
   });
 
   it("does not return Next-only architectures for Vite React projects", async () => {
@@ -29,6 +30,7 @@ describe("stack adapters", () => {
     expect(adapter?.recommendedArchitectures(stack)).not.toContain("error-loading-boundaries");
     expect(adapter?.recommendedArchitectures(stack)).toContain("secure-by-default");
     expect(adapter?.recommendedArchitectures(stack)).toContain("modern-typescript");
-    expect(adapter?.recommendedArchitectures(stack)).toContain("ui-states");
+    expect(adapter?.recommendedArchitectures(stack)).not.toContain("feature-modules");
+    expect(adapter?.recommendedArchitectures(stack)).not.toContain("ui-states");
   });
 });

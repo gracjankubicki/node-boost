@@ -7,9 +7,20 @@ const packageResourceMap: Record<string, string> = {
   next: "next",
   vite: "vite",
   "react-router": "react-router",
+  "react-router-dom": "react-router",
   zod: "zod",
+  valibot: "valibot",
   "@tanstack/react-query": "react-query",
+  "react-query-kit": "react-query",
+  swr: "swr",
   zustand: "zustand",
+  "react-hook-form": "react-hook-form",
+  storybook: "storybook",
+  "@storybook/react": "storybook",
+  "@mantine/core": "mantine",
+  i18next: "i18n",
+  "react-i18next": "i18n",
+  "@lingui/core": "i18n",
   typescript: "typescript",
   tailwindcss: "tailwindcss",
   vitest: "testing",
@@ -42,8 +53,16 @@ export async function composeGuidelines(
     addIfAvailable(selected, availableFiles, "testing/vitest.md");
   }
 
+  if (stack.packages.jest?.version) {
+    addIfAvailable(selected, availableFiles, "testing/jest.md");
+  }
+
   if (stack.packages.playwright?.version) {
     addIfAvailable(selected, availableFiles, "testing/playwright.md");
+  }
+
+  if (stack.packages.msw?.version) {
+    addIfAvailable(selected, availableFiles, "testing/msw.md");
   }
 
   const packageGuidelines = [...selected]

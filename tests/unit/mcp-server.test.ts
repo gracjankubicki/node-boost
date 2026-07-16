@@ -27,6 +27,7 @@ describe("node-boost MCP server", () => {
       expect(result.packageManager).toBe("npm@10.9.0");
       expect(result.typescript).toEqual({ version: "5.9.3", strict: true });
       expect(result.stack).toEqual({ name: "next", version: "16.2.9", router: "app", srcDir: true });
+      expect(result.capabilities).toEqual({ reactCompiler: false, nextCacheComponents: false });
       expect(result.packages.react).toBe("19.2.7");
       expect(result.boost?.generatedWith).toBe("0.1.0");
       expect(result.boost?.architectures).toContainEqual({ name: "feature-modules", options: { boundary: "forbid" } });
@@ -96,6 +97,28 @@ describe("node-boost MCP server", () => {
       const routes = await callJsonTool<UnsupportedRoutes>(client, "list_routes");
 
       expect(routes).toEqual({ supported: false, reason: "react-router route map is on the roadmap" });
+    });
+  });
+
+  it("returns version-aware library documentation routes", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      const client = await createClient(projectRoot);
+      const result = await callJsonTool<LibraryDocsResult>(client, "library_docs");
+      const next = result.packages.find((entry) => entry.packageName === "next");
+      const zod = result.packages.find((entry) => entry.packageName === "zod");
+
+      expect(result.indexPath).toBe(".ai/docs/llms.txt");
+      expect(next).toMatchObject({
+        version: "16.2.9",
+        preferredUrl: "https://nextjs.org/docs/llms.txt",
+        preferredScope: "major",
+        versionSource: "declared-range",
+      });
+      expect(zod).toMatchObject({
+        version: "4.0.0",
+        preferredUrl: "https://zod.dev/llms.txt",
+        preferredScope: "major",
+      });
     });
   });
 
@@ -298,6 +321,7 @@ interface ApplicationInfo {
   typescript: { version: string | null; strict: boolean | null };
   stack: { name: string; version: string | null; router: string; srcDir: boolean };
   packages: Record<string, string>;
+  capabilities: { reactCompiler: boolean; nextCacheComponents: boolean };
   boost: { generatedWith: string; architectures: Array<{ name: string; options: Record<string, unknown> }> } | null;
 }
 
@@ -312,6 +336,17 @@ interface RouteEntry {
 interface UnsupportedRoutes {
   supported: false;
   reason: string;
+}
+
+interface LibraryDocsResult {
+  indexPath: string;
+  packages: Array<{
+    packageName: string;
+    version: string;
+    preferredUrl: string;
+    preferredScope: string;
+    versionSource: string;
+  }>;
 }
 
 interface DoctorResult {

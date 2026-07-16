@@ -21,8 +21,13 @@ export const stateManagementRules: AuditRule[] = [
           return [];
         }
 
+        const looksLikeStoreModule = /(^|\/)(?:stores?|state)(\/|\.)/.test(file.path) || /\bcreate(?:Store)?\s*\(/.test(file.content);
+        const usesStoreDispatch = /\buseDispatch\s*\(/.test(file.content);
+
         return file.lines.flatMap((line, index) =>
-          /\b(use[A-Z]\w*Store\.setState|dispatch|set)\s*\(/.test(line)
+          /\buse[A-Z]\w*Store\.setState\s*\(/.test(line) ||
+          (looksLikeStoreModule && /\bset\s*\(/.test(line)) ||
+          (usesStoreDispatch && /\bdispatch\s*\(/.test(line))
             ? [finding(file, "NB-ARCH-009", "server-state-in-store", index + 1)]
             : [],
         );

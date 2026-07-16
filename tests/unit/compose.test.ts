@@ -40,22 +40,113 @@ describe("resource composition", () => {
     expect(paths).not.toContain("resources/react/guidelines/vite/6.md");
   });
 
+  it("selects Next 14 and React Router 6 version resources", async () => {
+    const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    nextStack.packages.next = { ...nextStack.packages.next, version: "14.2.0", major: 14 };
+    const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
+    viteStack.packages["react-router"] = { ...viteStack.packages["react-router"], version: null, major: null };
+    viteStack.packages["react-router-dom"] = {
+      name: "react-router-dom",
+      declaredRange: "^6.28.0",
+      version: "6.28.0",
+      major: 6,
+      source: "range",
+    };
+
+    expect((await composeGuidelines(repoRoot, nextStack)).map((item) => item.sourcePath)).toContain(
+      "resources/react/guidelines/next/14.md",
+    );
+    expect((await composeGuidelines(repoRoot, viteStack)).map((item) => item.sourcePath)).toContain(
+      "resources/react/guidelines/react-router/6.md",
+    );
+  });
+
   it("selects skills by detected stack and packages", async () => {
     const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
     const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
 
     expect((await composeSkills(repoRoot, nextStack)).map((resource) => resource.sourcePath)).toEqual([
       "resources/react/skills/next-development/SKILL.md",
+      "resources/react/skills/project-conventions-and-validation/SKILL.md",
       "resources/react/skills/react-development/SKILL.md",
       "resources/react/skills/tailwindcss-development/SKILL.md",
       "resources/react/skills/testing-frontend/SKILL.md",
     ]);
 
     expect((await composeSkills(repoRoot, viteStack)).map((resource) => resource.sourcePath)).toEqual([
+      "resources/react/skills/project-conventions-and-validation/SKILL.md",
       "resources/react/skills/react-development/SKILL.md",
       "resources/react/skills/spa-routing/SKILL.md",
       "resources/react/skills/testing-frontend/SKILL.md",
     ]);
+  });
+
+  it("does not install duplicate Tailwind and testing skills when architecture skills are selected", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    const resources = await composeSkills(repoRoot, stack, [
+      { name: "styling-tailwind", options: {} },
+      { name: "testing-strategy", options: {} },
+    ]);
+    const paths = resources.map((resource) => resource.sourcePath);
+
+    expect(paths).toContain("resources/react/architectures/styling-tailwind/skill/SKILL.md");
+    expect(paths).toContain("resources/react/architectures/testing-strategy/skill/SKILL.md");
+    expect(paths).not.toContain("resources/react/skills/tailwindcss-development/SKILL.md");
+    expect(paths).not.toContain("resources/react/skills/testing-frontend/SKILL.md");
+  });
+
+  it("composes capability-specific resources for an established frontend stack", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
+    const addPackage = (name: string, version = "1.0.0") => {
+      stack.packages[name] = {
+        name,
+        declaredRange: `^${version}`,
+        version,
+        major: Number.parseInt(version, 10),
+        source: "range",
+      };
+    };
+
+    for (const packageName of [
+      "swr",
+      "valibot",
+      "react-hook-form",
+      "@storybook/react",
+      "@mantine/core",
+      "i18next",
+      "html-react-parser",
+      "orval",
+      "msw",
+    ]) {
+      addPackage(packageName);
+    }
+
+    const guidelinePaths = (await composeGuidelines(repoRoot, stack)).map((resource) => resource.sourcePath);
+    const skillPaths = (await composeSkills(repoRoot, stack)).map((resource) => resource.sourcePath);
+
+    for (const path of [
+      "resources/react/guidelines/swr/core.md",
+      "resources/react/guidelines/valibot/core.md",
+      "resources/react/guidelines/react-hook-form/core.md",
+      "resources/react/guidelines/storybook/core.md",
+      "resources/react/guidelines/mantine/core.md",
+      "resources/react/guidelines/i18n/core.md",
+      "resources/react/guidelines/testing/msw.md",
+    ]) {
+      expect(guidelinePaths).toContain(path);
+    }
+
+    for (const path of [
+      "resources/react/skills/swr-data-access/SKILL.md",
+      "resources/react/skills/forms-and-runtime-validation/SKILL.md",
+      "resources/react/skills/storybook-component-workflow/SKILL.md",
+      "resources/react/skills/mantine-development/SKILL.md",
+      "resources/react/skills/localization-workflow/SKILL.md",
+      "resources/react/skills/trusted-rich-text-rendering/SKILL.md",
+      "resources/react/skills/orval-react-query-kit/SKILL.md",
+    ]) {
+      expect(skillPaths).toContain(path);
+    }
   });
 
   it("snapshots composed .ai guidelines for Next and Vite fixtures", async () => {

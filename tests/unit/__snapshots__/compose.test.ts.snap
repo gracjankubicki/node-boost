@@ -4,47 +4,48 @@ exports[`resource composition > snapshots composed .ai guidelines for Next and V
 {
   ".ai/guidelines/architectures/data-access-layer.md": "# Data Access Layer
 
-Components never call \`fetch\` directly. All data access lives in a dedicated layer: server functions in \`api/\` directories and client-side query hooks.
+Components do not own transport details. Route remote reads and writes through the data boundary already established by the repository.
+
+## Select the local variant first
+
+- Next server functions may live in shared \`src/api\`, \`server/\`, a feature, or another documented boundary.
+- Client server-state may use TanStack Query/react-query-kit, SWR, or a custom abstraction. Use the installed one.
+- Generated clients are transport building blocks, not proof of runtime validation. Do not edit generated output; compose generated calls and schemas through the project's wrapper.
+- Use the runtime schema library already present (for example Zod or Valibot).
 
 ## Server side (Next)
 
 <code-snippet name="Data layer function" lang="ts">
-// features/invoices/api/get-invoices.ts
 import "server-only"
 
 export async function getInvoices(filter: InvoiceFilter) {
-  "use cache"
-  const res = await apiClient.get("/invoices", { query: filter })
-  return invoiceListSchema.parse(res) // validate at the boundary (typed-contracts)
+  const response = await apiClient.get("/invoices", { query: filter })
+  return invoiceListSchema.parse(response)
 }
 </code-snippet>
 
-Server Components call \`getInvoices()\`, not \`fetch\`. Auth headers, error handling, retries and cache tags live in one place. Mutations go through Server Actions (\`"use server"\`) that validate input and call the data layer.
+Auth headers, timeouts, cancellation, error-envelope handling, retries, observability, runtime validation, and cache policy belong at this boundary. Caching is capability-sensitive:
+
+- Next 14: use the repository's \`fetch\` cache/revalidation and tags.
+- Next 15/16 without Cache Components: preserve the configured \`fetch\`/route model.
+- Cache Components enabled: \`"use cache"\`, \`cacheLife\`, and related APIs are available.
 
 ## Client side
 
-Components consume query hooks, never raw fetch:
-
-<code-snippet name="Query hook" lang="ts">
-// features/invoices/hooks/use-invoices.ts
-export function useInvoices(filter: InvoiceFilter) {
-  return useQuery({ queryKey: ["invoices", filter], queryFn: () => invoicesApi.list(filter) })
-}
-</code-snippet>
-
-Generated API clients (orval, openapi-typescript) **are** the data layer — use them instead of hand-writing one.
+Components consume the project's existing query/SWR/custom hooks. Stable keys, mutation behavior, cache updates, and invalidation follow nearby code. Do not add TanStack Query to an SWR application or vice versa.
 
 ## Rules
 
-- \`NB-ARCH-005\` (error): \`fetch\`/axios/ky in a client component outside the data layer and outside query hooks.
-- \`NB-ARCH-006\` (warn): raw \`fetch\` in a Server Component outside the data layer. Fetching directly in RSC is the framework idiom, but a layer keeps caching, headers and validation consistent — prefer it.
-- The layer's location is configurable via \`audit.ruleOptions\` (\`dataLayerGlobs\`, default \`**/api/**\`, \`**/server/**\`, \`lib/api/**\`, \`route.ts\`).
+- \`NB-ARCH-005\` (error): \`fetch\`/axios/ky in a client component outside the configured data layer and query hooks.
+- \`NB-ARCH-006\` (warn): raw network calls in a Server Component outside the data layer.
+- Configure locations with \`audit.ruleOptions\` (\`dataLayerGlobs\`, default \`**/api/**\`, \`**/server/**\`, \`lib/api/**\`, \`route.ts\`).
 
 ## Anti-patterns
 
-- \`useEffect\` + \`useState\` + \`fetch\` in a component — that is a hand-rolled, worse react-query.
+- \`useEffect\` + \`useState\` + \`fetch\` in a component.
 - Copy-pasting auth headers per call site.
-- Mutations bypassing Server Actions / the API client, losing validation and cache invalidation.
+- Assuming a generated TypeScript client makes untrusted JSON runtime-safe.
+- Blanket invalidation when a precise cache update or returned server state is available.
 ",
   ".ai/guidelines/architectures/feature-modules.md": "# Feature Modules (forbid boundary)
 
@@ -85,7 +86,7 @@ src/
 ",
   ".ai/guidelines/architectures/modern-typescript.md": "# Modern TypeScript
 
-The language contract for this codebase: strict compiler, no \`any\`, closed sets as unions, IDs as branded types.
+The language contract for this codebase: strict compiler, precise types, safe narrowing, and domain modeling proportionate to risk.
 
 ## Compiler
 
@@ -93,7 +94,7 @@ The language contract for this codebase: strict compiler, no \`any\`, closed set
 
 ## No \`any\` — narrow \`unknown\`
 
-\`any\` switches the type checker off at every use site (\`NB-ARCH-014\`, warn). For data of unknown shape use \`unknown\` and narrow with guards or parse with zod (typed-contracts). Casting external data with \`as\` is the same lie with better manners.
+\`any\` switches the type checker off at every use site (\`NB-ARCH-014\`, warn). For unknown data use \`unknown\` and narrow with guards or the installed schema library (typed-contracts). A cast does not validate external data; keep necessary DOM/library-boundary casts narrow and local. Generated output, declarations, and tests are excluded from the rule.
 
 ## Closed sets: discriminated unions + exhaustiveness
 
@@ -114,7 +115,7 @@ function label(state: PaymentState): string {
 // Adding { kind: "refunded" } breaks the build HERE — every switch is found for you.
 </code-snippet>
 
-Do not use TS \`enum\` — runtime quirks, poor tree-shaking. Closed value sets are const objects: \`const Role = { admin: "admin", user: "user" } as const; type Role = keyof typeof Role\`.
+For new local APIs, literal unions or const objects often produce simpler emitted code. Preserve established domain enums and generated contracts unless a coordinated migration has a concrete compatibility or maintenance benefit.
 
 ## Branded types for identifiers
 
@@ -124,7 +125,7 @@ type InvoiceId = string & { readonly __brand: "InvoiceId" }
 // payInvoice(userId, invoiceId) with swapped args → compile error, not a prod bug
 </code-snippet>
 
-Zero runtime cost — compile-time value objects. Use for IDs and easily-confused scalars (amounts, emails).
+Brands have zero runtime cost but add construction and interoperability overhead. Use them for high-risk, easily confused values when the repository already has—or explicitly adopts—a safe boundary; do not brand every identifier by default.
 
 ## Also
 
@@ -160,22 +161,22 @@ export function InvoiceFilter() {
 
 \`"use client"\` marks a boundary, not a component: everything imported below it becomes client code. Server Components can render Client Components and pass serializable props (no functions, no class instances) — compose interactivity in, don't lift the whole page out.
 
-## Next 16 specifics
+## Next 16 capability check
 
-- Nothing is cached by default; caching is explicit via \`"use cache"\` on components/functions — which only works if the tree stays server-first.
-- Partial Prerendering splits pages into a static shell plus dynamic holes in \`<Suspense>\`. A client-rooted page opts out of all of it.
+- \`"use cache"\`, \`cacheLife\`, and the Cache Components shell/dynamic-hole model require \`cacheComponents: true\` in \`next.config.*\`.
+- Without that flag, keep the project's fetch/revalidation and dynamic-rendering model; server-first boundaries still reduce client JavaScript.
 - Do not generate legacy idioms: \`getServerSideProps\`/\`getStaticProps\` belong to the Pages Router, not here.
 ",
   ".ai/guidelines/architectures/typed-contracts.md": "# Typed Contracts
 
-TypeScript types do not exist at runtime. Validate external data at the system's boundaries with zod, infer types from schemas, and trust types everywhere inside.
+TypeScript types do not exist at runtime. Validate external data at system boundaries with the schema library already used by the repository (for example Zod or Valibot), derive types where that library supports it, and trust values only after parsing.
 
-## The boundaries (validate here, and only here)
+## Validate at the boundary
 
-1. **API responses** — in the data layer: \`invoiceListSchema.parse(await res.json())\`. Exception: a generated client (orval/openapi-typescript) already carries the contract — do not double-validate.
-2. **User input** — forms (react-hook-form + zod resolver) and every Server Action (validate the payload first; a Server Action is a public endpoint).
-3. **Environment variables** — a single \`env.ts\` with a schema; crash at startup, not mid-request (\`NB-ARCH-008\`, warn, flags \`process.env.X\` elsewhere).
-4. **URL params** — \`searchParams\` are untrusted input like any query string.
+1. **API responses**—parse untrusted success payloads and relevant error envelopes in the data layer. Generated TypeScript clients do not make runtime JSON trustworthy. Generated runtime schemas are useful only when the application actually invokes them.
+2. **User input**—validate through the established form integration and again at every server endpoint; handle coercion explicitly.
+3. **Environment variables**—centralize them in a validated env module (\`NB-ARCH-008\`).
+4. **URL params/search state**—parse them as untrusted strings, including through an installed URL-state library such as \`nuqs\`.
 
 <code-snippet name="Schema as single source of truth" lang="ts">
 export const invoiceSchema = z.object({
@@ -183,31 +184,29 @@ export const invoiceSchema = z.object({
   amount: z.number(),
   status: z.enum(["draft", "paid", "void"]),
 })
-export type Invoice = z.infer<typeof invoiceSchema> // type derives from schema — no duplication
+export type Invoice = z.infer<typeof invoiceSchema>
 </code-snippet>
+
+The snippet uses Zod; use the equivalent Valibot or project-specific schema when that is the established dependency.
 
 ## Rules
 
-- Never \`as Invoice\` on external data — a cast is a promise the runtime never checks. Parse it (\`NB-ARCH-007\`, warn, flags unvalidated \`res.json()\`/\`JSON.parse\` in the data layer).
-- One schema per contract; derive narrower views with \`.pick()\`/\`.omit()\` instead of re-declaring.
-- Form UX: validate on blur for fields, on submit for the whole form; reserve layout space for the error message so the layout does not jump.
-
-## Anti-patterns
-
-- **Zod fatigue**: re-parsing the same data in every component. Validate at the boundary; inside the app the type is the truth.
-- Hand-written interfaces duplicating a schema (they drift apart silently).
-- Mind the zod major in this project — zod 4 changed APIs (\`z.email()\` top-level, reworked error customization); follow the versioned zod guideline.
+- Do not cast external data to its hoped-for type. Parse it (\`NB-ARCH-007\` flags raw JSON boundaries in configured data-layer paths).
+- Generated files are excluded, but manual endpoints and wrappers remain audited even when Orval/openapi-typescript is installed.
+- If runtime validation is centralized in a project helper, list its imported function name under \`NB-ARCH-007\`'s \`runtimeValidatorFunctions\` rule option; arbitrary function names are not trusted automatically.
+- Define whether validation is fail-closed or fail-open with telemetry. A validator that only logs and returns original data is observability, not enforcement.
+- Avoid duplicate schemas for the same contract; compose or derive narrower views with the installed library.
 ",
   ".ai/guidelines/core.md": "# Node Boost Core
 
-Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines/\` are composed from the packages actually installed — trust them over training-data habits, which are often a major version stale.
+Baseline for AI-assisted work in this repository. Package guidelines are composed from detected dependencies; architecture guidelines are explicitly selected or inferred from concrete capabilities. Local \`AGENTS.md\`, README instructions, scripts, and nearby code remain authoritative project conventions.
 
 ## Working rules
 
-- Match the project's detected stack and versions (see the \`application_info\` MCP tool) before writing code; version-specific guidelines override generic knowledge.
+- Read local instructions and package scripts, then match the detected stack and versions (use \`application_info\` when Node Boost is installed). Version-specific guidelines override generic knowledge, but a framework version alone does not prove that an optional compiler or feature flag is enabled.
 - Follow the enabled architecture guidelines (indexed in \`node-boost.md\`); the \`audit\`/\`guard\` commands enforce their rules (\`NB-ARCH-xxx\`). Use \`explain <ID>\` when a finding is unclear.
 - Suppressing a finding requires a reason: \`// nb-disable NB-ARCH-xxx -- <why>\`. Unreasoned suppressions are flagged.
-- After completing changes, run \`node-boost audit --changed\` (or rely on the installed Stop hook) and fix findings before handing back.
+- After completing changes, use the repository's documented validation commands. When Node Boost is installed, also run \`node-boost audit --changed\` (or rely on its Stop hook).
 
 ## Repository hygiene
 
@@ -216,16 +215,17 @@ Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines
 ",
   ".ai/guidelines/next/16.md": "# Next.js 16
 
-This project runs Next 16 — its caching model is **explicit**. Do not generate Next 13/14-era idioms.
+This project runs Next 16. First inspect \`next.config.*\`: Cache Components is optional and \`"use cache"\` requires \`cacheComponents: true\`.
 
-- Nothing is cached by default: pages are dynamic; opt in with the \`"use cache"\` directive at the function/component level, as close to the data as possible (usually in the data layer).
-- Control lifetimes with \`cacheLife()\` profiles; invalidate with \`revalidateTag()\`/\`updateTag()\` from Server Actions.
-- Partial Prerendering is the default model with cache components enabled: static shell + dynamic holes defined by \`<Suspense>\` boundaries — structure pages accordingly (see error-loading-boundaries).
-- \`params\` and \`searchParams\` in pages/layouts are **async** — \`await\` them.
-- Do NOT write: \`fetch(..., { next: { revalidate } })\` as the primary caching tool, \`export const revalidate\`, or \`unstable_cache\` — these are legacy patterns superseded by \`"use cache"\`.
+- With Cache Components enabled, opt in at the function/component level with \`"use cache"\`, control lifetimes with \`cacheLife()\`, and use tag invalidation supported by that model.
+- Without Cache Components, preserve the project's existing \`fetch\` cache/revalidation or dynamic-rendering approach. Do not insert \`"use cache"\`, \`cacheLife()\`, or \`updateTag()\`.
+- Cache Components combines a cacheable shell with dynamic holes defined by \`<Suspense>\` boundaries. Describe this as active only when \`cacheComponents: true\` is present.
+- \`params\` and \`searchParams\` in pages/layouts are async—\`await\` them.
+- When Cache Components is enabled, prefer its APIs for new cache behavior. Otherwise, \`fetch(..., { next: { revalidate } })\`, route config, or existing wrappers may still be the project's correct model.
 - Turbopack is the default bundler; do not add webpack-specific config unless the project already has it.
 
 <code-snippet name="Explicit caching in the data layer" lang="ts">
+// Only when next.config.* enables cacheComponents.
 export async function getInvoices() {
   "use cache"
   cacheLife("minutes")
@@ -237,7 +237,7 @@ export async function getInvoices() {
 
 - App Router conventions: routes are folders; \`page.tsx\` renders, \`layout.tsx\` wraps, \`route.ts\` handles HTTP, \`loading.tsx\`/\`error.tsx\` are boundaries. Do not mix in Pages Router idioms (\`getServerSideProps\`, \`getStaticProps\`, \`_app.tsx\`) unless the project actually uses \`pages/\`.
 - Components are Server Components by default; \`"use client"\` only on interactive leaves (see server-first-components guideline).
-- Data flows through the data layer; mutations through Server Actions with auth + validation (see data-access-layer and secure-by-default).
+- Data flows through the project's established data layer. Mutations may use Server Actions, Route Handlers, or the installed client cache/form stack; every server endpoint still needs auth, authorization, and runtime validation.
 - Use the framework's primitives before reaching for libraries: \`next/image\` for images, \`next/font\` for fonts, \`next/link\` for navigation, Metadata API for \`<head>\`.
 - Route params and \`searchParams\` are untrusted input — validate before use.
 - Prefer \`redirect()\`/\`notFound()\` from the server over client-side workarounds.
@@ -251,6 +251,11 @@ export async function getInvoices() {
 - package manager: npm
 - linting: eslint-prettier
 
+## Capabilities
+
+- React Compiler configured: no
+- Next Cache Components enabled: no
+
 ## Packages
 
 - eslint: 10.6.0 (range)
@@ -261,6 +266,10 @@ export async function getInvoices() {
 - typescript: 5.9.3 (range)
 - vitest: 3.2.0 (range)
 - zod: 4.0.0 (range)
+
+## Library Documentation
+
+- .ai/docs/llms.txt (version-aware official documentation and exact package references)
 
 ## Architectures
 
@@ -291,14 +300,14 @@ export async function getInvoices() {
 ",
   ".ai/guidelines/react/19.md": "# React 19
 
-This project runs React 19 — several long-standing idioms are dead. Do not generate them.
+This project runs React 19. Use its APIs when they match the project's established architecture and configured build capabilities.
 
-- \`ref\` is a regular prop: **no \`forwardRef\`**. \`function Input({ ref, ...props })\` just works.
-- React Compiler (1.0, stable) memoizes automatically: **no ritual \`useCallback\`/\`useMemo\`/\`React.memo\`** — use them only for referential guarantees (e.g. effect deps).
-- Actions are the mutation primitive: \`<form action={fn}>\`, \`useActionState\` for pending/error, \`useFormStatus\` inside forms, \`useOptimistic\` for instant feedback (see ui-states guideline).
+- New function components can accept \`ref\` as a prop. Existing \`forwardRef\` components remain valid; preserve them when compatibility, a component library, or nearby code expects that API.
+- React Compiler is a separate build-time integration. Only rely on automatic memoization after verifying the compiler plugin/configuration is enabled; otherwise preserve intentional \`useCallback\`/\`useMemo\`/\`React.memo\` usage.
+- Actions are available: \`<form action={fn}>\`, \`useActionState\`, \`useFormStatus\`, and \`useOptimistic\`. Adopt them when the app uses an Action-based mutation flow; they do not replace an established query/SWR/form architecture merely because React is 19.
 - \`use(promise)\` unwraps promises in render (with Suspense); \`use(Context)\` replaces \`useContext\` and may be called conditionally.
 - Metadata tags (\`<title>\`, \`<meta>\`) render from components and hoist automatically (in non-Next apps).
-- \`propTypes\` and \`defaultProps\` on function components are removed — TypeScript types and default parameters instead.
+- Prefer TypeScript types and default parameters over \`propTypes\`/function-component \`defaultProps\` in new TypeScript code.
 ",
   ".ai/guidelines/react/core.md": "# React Core
 
@@ -314,7 +323,7 @@ This project runs React 19 — several long-standing idioms are dead. Do not gen
 
 This project runs Tailwind 4 — configuration is CSS-first. Do not generate v3 idioms.
 
-- **No \`tailwind.config.js\`.** Configuration lives in CSS: \`@import "tailwindcss"\` plus \`@theme { --color-brand: ...; }\` for tokens. Do not create a JS config file.
+- Configuration is CSS-first: \`@import "tailwindcss"\` plus \`@theme { --color-brand: ...; }\` for tokens. Do not create a JS config by default; preserve deliberate legacy JavaScript configuration loaded through \`@config\`.
 - Theme tokens are CSS variables, usable directly (\`var(--color-brand)\`) and generating utilities automatically.
 - No \`content\` array to maintain — sources are auto-detected; no PostCSS \`autoprefixer\`/\`postcss-import\` boilerplate (built in via \`@tailwindcss/postcss\` or the Vite plugin).
 - v3 → v4 renames to respect: \`shadow-sm\` → \`shadow-xs\`, \`outline-none\` → \`outline-hidden\`, ring default width changed — check migrated class names rather than assuming v3 scales.
@@ -325,26 +334,26 @@ This project runs Tailwind 4 — configuration is CSS-first. Do not generate v3 
 - Utility-first in JSX; reuse through React components, not through custom CSS classes. Keep \`@apply\` to a rare minimum.
 - Never construct class names dynamically (\`text-\${color}-500\`) — the compiler scans sources statically; interpolated classes silently don't exist. Map conditions to full literal class strings.
 - Use theme tokens for colors/spacing; arbitrary values (\`w-[347px]\`) are one-off exceptions with a reason.
-- Visual variants via \`cva\` + \`tailwind-merge\`; conditional classes via a \`cn()\` helper (see styling-tailwind guideline).
+- Use the repository's existing variant/merge mechanism (often CVA + \`tailwind-merge\`); simple conditional classes may stay simple.
 - Keep class order consistent with the project's formatter (prettier-plugin-tailwindcss or Biome's sorting).
 - Follow the version-specific Tailwind guideline — configuration differs fundamentally between v3 and v4.
 ",
   ".ai/guidelines/testing/vitest.md": "# Vitest
 
-- Runner for unit and component tests; component tests use Testing Library + \`@testing-library/jest-dom\` matchers in a jsdom (or browser-mode) environment.
-- Test behavior through roles/labels; mock the network with MSW, never your own hooks/modules under test (see testing-strategy guideline).
+- Runner for unit and component tests; component tests use Testing Library + \`@testing-library/jest-dom\` matchers only when those packages and a DOM environment are configured.
+- Test behavior through roles/labels when Testing Library is installed. Use MSW when present; otherwise follow the repository's established network seam.
 - Structure: \`describe\` per unit/feature, test names state observable behavior ("shows validation error when amount is empty").
-- Use \`vi.fn()\`/\`vi.spyOn\` for collaborator seams; avoid \`vi.mock\` of internal modules — it usually signals a missing seam.
+- Use \`vi.fn()\`/\`vi.spyOn()\` for collaborator seams. Focused \`vi.mock()\` usage can be appropriate for a deliberate unit boundary; restore mocks between tests.
 - Keep tests deterministic: fake timers for time-dependent logic (\`vi.useFakeTimers\`), no real network, no ordering dependence.
-- Run a focused file with \`vitest run <path>\`; the full gate is the project's \`npm test\`.
+- Run focused and full tests through the repository's documented package-manager command or wrapper. Do not assume \`npm test\`; some projects require Yarn, pnpm, Make targets, code generation, or i18n compilation first.
 ",
   ".ai/guidelines/typescript/core.md": "# TypeScript Core
 
 - \`strict: true\` is the floor; treat compiler errors as design feedback, not noise to cast away.
-- No \`any\` and no \`as\` on external data — \`unknown\` + narrowing, or a zod parse at the boundary (see typed-contracts and modern-typescript guidelines).
-- Model closed sets as discriminated unions or const objects (never \`enum\`); make switches exhaustive with a \`never\` check.
-- Derive types instead of duplicating them: \`z.infer\`, \`ReturnType\`, \`Pick\`/\`Omit\`, \`satisfies\` for literal checking.
-- Types live next to their domain (feature's \`types.ts\`); shared primitives (branded IDs) in \`lib/\`.
+- Avoid \`any\` and unjustified casts on external data—use \`unknown\` + narrowing or the installed runtime schema (see typed-contracts and modern-typescript).
+- Model new local closed sets with discriminated unions/const objects where useful; preserve established or generated enums unless a coordinated migration has a concrete benefit.
+- Derive types instead of duplicating them through the installed schema library, \`ReturnType\`, \`Pick\`/\`Omit\`, and \`satisfies\`.
+- Colocate types with their domain using the repository's established layout. Brand only high-risk, easily confused values with a safe construction boundary.
 ",
   ".ai/guidelines/zod/4.md": "# Zod 4
 
@@ -372,47 +381,48 @@ exports[`resource composition > snapshots composed .ai guidelines for Next and V
 {
   ".ai/guidelines/architectures/data-access-layer.md": "# Data Access Layer
 
-Components never call \`fetch\` directly. All data access lives in a dedicated layer: server functions in \`api/\` directories and client-side query hooks.
+Components do not own transport details. Route remote reads and writes through the data boundary already established by the repository.
+
+## Select the local variant first
+
+- Next server functions may live in shared \`src/api\`, \`server/\`, a feature, or another documented boundary.
+- Client server-state may use TanStack Query/react-query-kit, SWR, or a custom abstraction. Use the installed one.
+- Generated clients are transport building blocks, not proof of runtime validation. Do not edit generated output; compose generated calls and schemas through the project's wrapper.
+- Use the runtime schema library already present (for example Zod or Valibot).
 
 ## Server side (Next)
 
 <code-snippet name="Data layer function" lang="ts">
-// features/invoices/api/get-invoices.ts
 import "server-only"
 
 export async function getInvoices(filter: InvoiceFilter) {
-  "use cache"
-  const res = await apiClient.get("/invoices", { query: filter })
-  return invoiceListSchema.parse(res) // validate at the boundary (typed-contracts)
+  const response = await apiClient.get("/invoices", { query: filter })
+  return invoiceListSchema.parse(response)
 }
 </code-snippet>
 
-Server Components call \`getInvoices()\`, not \`fetch\`. Auth headers, error handling, retries and cache tags live in one place. Mutations go through Server Actions (\`"use server"\`) that validate input and call the data layer.
+Auth headers, timeouts, cancellation, error-envelope handling, retries, observability, runtime validation, and cache policy belong at this boundary. Caching is capability-sensitive:
+
+- Next 14: use the repository's \`fetch\` cache/revalidation and tags.
+- Next 15/16 without Cache Components: preserve the configured \`fetch\`/route model.
+- Cache Components enabled: \`"use cache"\`, \`cacheLife\`, and related APIs are available.
 
 ## Client side
 
-Components consume query hooks, never raw fetch:
-
-<code-snippet name="Query hook" lang="ts">
-// features/invoices/hooks/use-invoices.ts
-export function useInvoices(filter: InvoiceFilter) {
-  return useQuery({ queryKey: ["invoices", filter], queryFn: () => invoicesApi.list(filter) })
-}
-</code-snippet>
-
-Generated API clients (orval, openapi-typescript) **are** the data layer — use them instead of hand-writing one.
+Components consume the project's existing query/SWR/custom hooks. Stable keys, mutation behavior, cache updates, and invalidation follow nearby code. Do not add TanStack Query to an SWR application or vice versa.
 
 ## Rules
 
-- \`NB-ARCH-005\` (error): \`fetch\`/axios/ky in a client component outside the data layer and outside query hooks.
-- \`NB-ARCH-006\` (warn): raw \`fetch\` in a Server Component outside the data layer. Fetching directly in RSC is the framework idiom, but a layer keeps caching, headers and validation consistent — prefer it.
-- The layer's location is configurable via \`audit.ruleOptions\` (\`dataLayerGlobs\`, default \`**/api/**\`, \`**/server/**\`, \`lib/api/**\`, \`route.ts\`).
+- \`NB-ARCH-005\` (error): \`fetch\`/axios/ky in a client component outside the configured data layer and query hooks.
+- \`NB-ARCH-006\` (warn): raw network calls in a Server Component outside the data layer.
+- Configure locations with \`audit.ruleOptions\` (\`dataLayerGlobs\`, default \`**/api/**\`, \`**/server/**\`, \`lib/api/**\`, \`route.ts\`).
 
 ## Anti-patterns
 
-- \`useEffect\` + \`useState\` + \`fetch\` in a component — that is a hand-rolled, worse react-query.
+- \`useEffect\` + \`useState\` + \`fetch\` in a component.
 - Copy-pasting auth headers per call site.
-- Mutations bypassing Server Actions / the API client, losing validation and cache invalidation.
+- Assuming a generated TypeScript client makes untrusted JSON runtime-safe.
+- Blanket invalidation when a precise cache update or returned server state is available.
 ",
   ".ai/guidelines/architectures/feature-modules.md": "# Feature Modules (public-api boundary)
 
@@ -454,7 +464,7 @@ src/
 ",
   ".ai/guidelines/architectures/modern-typescript.md": "# Modern TypeScript
 
-The language contract for this codebase: strict compiler, no \`any\`, closed sets as unions, IDs as branded types.
+The language contract for this codebase: strict compiler, precise types, safe narrowing, and domain modeling proportionate to risk.
 
 ## Compiler
 
@@ -462,7 +472,7 @@ The language contract for this codebase: strict compiler, no \`any\`, closed set
 
 ## No \`any\` — narrow \`unknown\`
 
-\`any\` switches the type checker off at every use site (\`NB-ARCH-014\`, warn). For data of unknown shape use \`unknown\` and narrow with guards or parse with zod (typed-contracts). Casting external data with \`as\` is the same lie with better manners.
+\`any\` switches the type checker off at every use site (\`NB-ARCH-014\`, warn). For unknown data use \`unknown\` and narrow with guards or the installed schema library (typed-contracts). A cast does not validate external data; keep necessary DOM/library-boundary casts narrow and local. Generated output, declarations, and tests are excluded from the rule.
 
 ## Closed sets: discriminated unions + exhaustiveness
 
@@ -483,7 +493,7 @@ function label(state: PaymentState): string {
 // Adding { kind: "refunded" } breaks the build HERE — every switch is found for you.
 </code-snippet>
 
-Do not use TS \`enum\` — runtime quirks, poor tree-shaking. Closed value sets are const objects: \`const Role = { admin: "admin", user: "user" } as const; type Role = keyof typeof Role\`.
+For new local APIs, literal unions or const objects often produce simpler emitted code. Preserve established domain enums and generated contracts unless a coordinated migration has a concrete compatibility or maintenance benefit.
 
 ## Branded types for identifiers
 
@@ -493,7 +503,7 @@ type InvoiceId = string & { readonly __brand: "InvoiceId" }
 // payInvoice(userId, invoiceId) with swapped args → compile error, not a prod bug
 </code-snippet>
 
-Zero runtime cost — compile-time value objects. Use for IDs and easily-confused scalars (amounts, emails).
+Brands have zero runtime cost but add construction and interoperability overhead. Use them for high-risk, easily confused values when the repository already has—or explicitly adopts—a safe boundary; do not brand every identifier by default.
 
 ## Also
 
@@ -506,7 +516,7 @@ Classify state before placing it. Each kind has exactly one correct home; most b
 
 | Kind | Example | Home |
 |---|---|---|
-| Server state | invoices, users | react-query cache (or RSC props in Next) |
+| Server state | invoices, users | installed server cache (Query/SWR) or RSC props |
 | Local UI state | open modal, input value | \`useState\` in the component |
 | Shared client state | theme, sidebar, multi-step draft | Context (rare updates) / store like zustand (frequent) |
 | URL state | filters, pagination, active tab | \`searchParams\` |
@@ -519,7 +529,7 @@ const invoices = await api.getInvoices()
 useInvoiceStore.setState({ invoices })
 </code-snippet>
 
-react-query already is the store for server data: keys, staleness, refetch, \`invalidateQueries\` after mutations. A client store holds only what the backend does not know (preferences, drafts, selections).
+The installed server-state mechanism already owns keys, freshness, refetch, and mutation updates. Use TanStack Query/react-query-kit, SWR, RSC, or the repository's custom boundary as detected; do not introduce a second cache library. A client store holds only what the backend does not know (preferences, drafts, selections).
 
 ## Escalation ladder
 
@@ -527,7 +537,7 @@ react-query already is the store for server data: keys, staleness, refetch, \`in
 
 ## Next specifics
 
-Server Components remove the need for much client state — data arriving as props needs no client cache. Keep react-query for interactive islands, not for whole server-rendered pages.
+Server Components remove the need for much client state—data arriving as props needs no client cache. Use a client cache only for interactive regions that need it and follow the library already installed.
 
 ## Anti-patterns
 
@@ -537,14 +547,14 @@ Server Components remove the need for much client state — data arriving as pro
 ",
   ".ai/guidelines/architectures/typed-contracts.md": "# Typed Contracts
 
-TypeScript types do not exist at runtime. Validate external data at the system's boundaries with zod, infer types from schemas, and trust types everywhere inside.
+TypeScript types do not exist at runtime. Validate external data at system boundaries with the schema library already used by the repository (for example Zod or Valibot), derive types where that library supports it, and trust values only after parsing.
 
-## The boundaries (validate here, and only here)
+## Validate at the boundary
 
-1. **API responses** — in the data layer: \`invoiceListSchema.parse(await res.json())\`. Exception: a generated client (orval/openapi-typescript) already carries the contract — do not double-validate.
-2. **User input** — forms (react-hook-form + zod resolver) and every Server Action (validate the payload first; a Server Action is a public endpoint).
-3. **Environment variables** — a single \`env.ts\` with a schema; crash at startup, not mid-request (\`NB-ARCH-008\`, warn, flags \`process.env.X\` elsewhere).
-4. **URL params** — \`searchParams\` are untrusted input like any query string.
+1. **API responses**—parse untrusted success payloads and relevant error envelopes in the data layer. Generated TypeScript clients do not make runtime JSON trustworthy. Generated runtime schemas are useful only when the application actually invokes them.
+2. **User input**—validate through the established form integration and again at every server endpoint; handle coercion explicitly.
+3. **Environment variables**—centralize them in a validated env module (\`NB-ARCH-008\`).
+4. **URL params/search state**—parse them as untrusted strings, including through an installed URL-state library such as \`nuqs\`.
 
 <code-snippet name="Schema as single source of truth" lang="ts">
 export const invoiceSchema = z.object({
@@ -552,31 +562,29 @@ export const invoiceSchema = z.object({
   amount: z.number(),
   status: z.enum(["draft", "paid", "void"]),
 })
-export type Invoice = z.infer<typeof invoiceSchema> // type derives from schema — no duplication
+export type Invoice = z.infer<typeof invoiceSchema>
 </code-snippet>
+
+The snippet uses Zod; use the equivalent Valibot or project-specific schema when that is the established dependency.
 
 ## Rules
 
-- Never \`as Invoice\` on external data — a cast is a promise the runtime never checks. Parse it (\`NB-ARCH-007\`, warn, flags unvalidated \`res.json()\`/\`JSON.parse\` in the data layer).
-- One schema per contract; derive narrower views with \`.pick()\`/\`.omit()\` instead of re-declaring.
-- Form UX: validate on blur for fields, on submit for the whole form; reserve layout space for the error message so the layout does not jump.
-
-## Anti-patterns
-
-- **Zod fatigue**: re-parsing the same data in every component. Validate at the boundary; inside the app the type is the truth.
-- Hand-written interfaces duplicating a schema (they drift apart silently).
-- Mind the zod major in this project — zod 4 changed APIs (\`z.email()\` top-level, reworked error customization); follow the versioned zod guideline.
+- Do not cast external data to its hoped-for type. Parse it (\`NB-ARCH-007\` flags raw JSON boundaries in configured data-layer paths).
+- Generated files are excluded, but manual endpoints and wrappers remain audited even when Orval/openapi-typescript is installed.
+- If runtime validation is centralized in a project helper, list its imported function name under \`NB-ARCH-007\`'s \`runtimeValidatorFunctions\` rule option; arbitrary function names are not trusted automatically.
+- Define whether validation is fail-closed or fail-open with telemetry. A validator that only logs and returns original data is observability, not enforcement.
+- Avoid duplicate schemas for the same contract; compose or derive narrower views with the installed library.
 ",
   ".ai/guidelines/core.md": "# Node Boost Core
 
-Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines/\` are composed from the packages actually installed — trust them over training-data habits, which are often a major version stale.
+Baseline for AI-assisted work in this repository. Package guidelines are composed from detected dependencies; architecture guidelines are explicitly selected or inferred from concrete capabilities. Local \`AGENTS.md\`, README instructions, scripts, and nearby code remain authoritative project conventions.
 
 ## Working rules
 
-- Match the project's detected stack and versions (see the \`application_info\` MCP tool) before writing code; version-specific guidelines override generic knowledge.
+- Read local instructions and package scripts, then match the detected stack and versions (use \`application_info\` when Node Boost is installed). Version-specific guidelines override generic knowledge, but a framework version alone does not prove that an optional compiler or feature flag is enabled.
 - Follow the enabled architecture guidelines (indexed in \`node-boost.md\`); the \`audit\`/\`guard\` commands enforce their rules (\`NB-ARCH-xxx\`). Use \`explain <ID>\` when a finding is unclear.
 - Suppressing a finding requires a reason: \`// nb-disable NB-ARCH-xxx -- <why>\`. Unreasoned suppressions are flagged.
-- After completing changes, run \`node-boost audit --changed\` (or rely on the installed Stop hook) and fix findings before handing back.
+- After completing changes, use the repository's documented validation commands. When Node Boost is installed, also run \`node-boost audit --changed\` (or rely on its Stop hook).
 
 ## Repository hygiene
 
@@ -592,6 +600,11 @@ Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines
 - package manager: pnpm
 - linting: biome
 
+## Capabilities
+
+- React Compiler configured: no
+- Next Cache Components enabled: no
+
 ## Packages
 
 - @biomejs/biome: 2.3.8 (range)
@@ -602,6 +615,10 @@ Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines
 - vite: 6.0.0 (range)
 - vitest: 3.2.0 (range)
 - zustand: 5.0.0 (range)
+
+## Library Documentation
+
+- .ai/docs/llms.txt (version-aware official documentation and exact package references)
 
 ## Architectures
 
@@ -642,30 +659,30 @@ Baseline for AI-assisted work in this repository. Guidelines in \`.ai/guidelines
 
 This project runs React Router 7 — the merged react-router package. Do not generate v5/v6-era imports or idioms.
 
-- Import from \`react-router\` (v7 merged \`react-router-dom\` into it; check which import style this project uses and stay consistent).
+- React Router 7 supports the merged \`react-router\` package, while existing \`react-router-dom\` imports may remain. Check the declared dependency and local import style; do not rewrite imports solely for version conformity.
 - v7 spans modes: library mode (manual \`<Routes>\`/\`createBrowserRouter\`) and framework mode (file conventions, loaders/actions). **Match the project's existing mode** — do not introduce loaders/actions into a library-mode SPA that fetches via react-query.
-- In library mode with react-query (typical here): data fetching stays in query hooks; the router only maps URLs to screens.
+- In library mode, preserve the installed server-state mechanism (Query/SWR/custom); do not move ownership into router loaders solely because v7 supports them.
 - Use \`createBrowserRouter\`/route objects over JSX route trees for new route configuration; type route params where the setup provides typegen.
 - No \`<Switch>\`, no \`useHistory\` (v5 relics) — \`<Routes>\`, \`useNavigate\`, \`useSearchParams\`.
 ",
   ".ai/guidelines/react-router/core.md": "# React Router Core
 
-- Routes are configuration, not scattered strings: keep the route tree in one module (\`src/routers.tsx\` / \`src/routes/\`), and reference paths via constants or typed helpers — no hardcoded \`"/invoices/" + id\` concatenation in components.
+- Discover the existing route style and keep new definitions with its central route tree. Use existing constants/typed helpers when present; do not mandate a new constants layer for a codebase that consistently uses route literals.
 - URL is state: filters, pagination, tabs and other shareable view state belong in \`searchParams\`, not in a store (see state-management guideline).
-- Navigation through \`<Link>\`/\`<NavLink>\`/\`useNavigate\` — never \`window.location\` for internal routes.
+- Use \`<Link>\`/\`<NavLink>\`/\`useNavigate\` for ordinary SPA transitions. Full-document navigation is intentional for external destinations, downloads, auth handoffs, or forced reloads.
 - Route params are untrusted input: validate/parse before use (see typed-contracts guideline).
-- Lazy-load route-level components for code splitting; pair each lazy route with a skeleton fallback (see ui-states guideline).
+- Lazy-load route components where bundle size or route isolation justifies it; a small route need not gain an artificial split. Provide an appropriate fallback for genuinely asynchronous route chunks.
 ",
   ".ai/guidelines/react/19.md": "# React 19
 
-This project runs React 19 — several long-standing idioms are dead. Do not generate them.
+This project runs React 19. Use its APIs when they match the project's established architecture and configured build capabilities.
 
-- \`ref\` is a regular prop: **no \`forwardRef\`**. \`function Input({ ref, ...props })\` just works.
-- React Compiler (1.0, stable) memoizes automatically: **no ritual \`useCallback\`/\`useMemo\`/\`React.memo\`** — use them only for referential guarantees (e.g. effect deps).
-- Actions are the mutation primitive: \`<form action={fn}>\`, \`useActionState\` for pending/error, \`useFormStatus\` inside forms, \`useOptimistic\` for instant feedback (see ui-states guideline).
+- New function components can accept \`ref\` as a prop. Existing \`forwardRef\` components remain valid; preserve them when compatibility, a component library, or nearby code expects that API.
+- React Compiler is a separate build-time integration. Only rely on automatic memoization after verifying the compiler plugin/configuration is enabled; otherwise preserve intentional \`useCallback\`/\`useMemo\`/\`React.memo\` usage.
+- Actions are available: \`<form action={fn}>\`, \`useActionState\`, \`useFormStatus\`, and \`useOptimistic\`. Adopt them when the app uses an Action-based mutation flow; they do not replace an established query/SWR/form architecture merely because React is 19.
 - \`use(promise)\` unwraps promises in render (with Suspense); \`use(Context)\` replaces \`useContext\` and may be called conditionally.
 - Metadata tags (\`<title>\`, \`<meta>\`) render from components and hoist automatically (in non-Next apps).
-- \`propTypes\` and \`defaultProps\` on function components are removed — TypeScript types and default parameters instead.
+- Prefer TypeScript types and default parameters over \`propTypes\`/function-component \`defaultProps\` in new TypeScript code.
 ",
   ".ai/guidelines/react/core.md": "# React Core
 
@@ -679,20 +696,20 @@ This project runs React 19 — several long-standing idioms are dead. Do not gen
 ",
   ".ai/guidelines/testing/vitest.md": "# Vitest
 
-- Runner for unit and component tests; component tests use Testing Library + \`@testing-library/jest-dom\` matchers in a jsdom (or browser-mode) environment.
-- Test behavior through roles/labels; mock the network with MSW, never your own hooks/modules under test (see testing-strategy guideline).
+- Runner for unit and component tests; component tests use Testing Library + \`@testing-library/jest-dom\` matchers only when those packages and a DOM environment are configured.
+- Test behavior through roles/labels when Testing Library is installed. Use MSW when present; otherwise follow the repository's established network seam.
 - Structure: \`describe\` per unit/feature, test names state observable behavior ("shows validation error when amount is empty").
-- Use \`vi.fn()\`/\`vi.spyOn\` for collaborator seams; avoid \`vi.mock\` of internal modules — it usually signals a missing seam.
+- Use \`vi.fn()\`/\`vi.spyOn()\` for collaborator seams. Focused \`vi.mock()\` usage can be appropriate for a deliberate unit boundary; restore mocks between tests.
 - Keep tests deterministic: fake timers for time-dependent logic (\`vi.useFakeTimers\`), no real network, no ordering dependence.
-- Run a focused file with \`vitest run <path>\`; the full gate is the project's \`npm test\`.
+- Run focused and full tests through the repository's documented package-manager command or wrapper. Do not assume \`npm test\`; some projects require Yarn, pnpm, Make targets, code generation, or i18n compilation first.
 ",
   ".ai/guidelines/typescript/core.md": "# TypeScript Core
 
 - \`strict: true\` is the floor; treat compiler errors as design feedback, not noise to cast away.
-- No \`any\` and no \`as\` on external data — \`unknown\` + narrowing, or a zod parse at the boundary (see typed-contracts and modern-typescript guidelines).
-- Model closed sets as discriminated unions or const objects (never \`enum\`); make switches exhaustive with a \`never\` check.
-- Derive types instead of duplicating them: \`z.infer\`, \`ReturnType\`, \`Pick\`/\`Omit\`, \`satisfies\` for literal checking.
-- Types live next to their domain (feature's \`types.ts\`); shared primitives (branded IDs) in \`lib/\`.
+- Avoid \`any\` and unjustified casts on external data—use \`unknown\` + narrowing or the installed runtime schema (see typed-contracts and modern-typescript).
+- Model new local closed sets with discriminated unions/const objects where useful; preserve established or generated enums unless a coordinated migration has a concrete benefit.
+- Derive types instead of duplicating them through the installed schema library, \`ReturnType\`, \`Pick\`/\`Omit\`, and \`satisfies\`.
+- Colocate types with their domain using the repository's established layout. Brand only high-risk, easily confused values with a safe construction boundary.
 ",
   ".ai/guidelines/vite/core.md": "# Vite Core
 
@@ -705,7 +722,7 @@ This project runs React 19 — several long-standing idioms are dead. Do not gen
 ",
   ".ai/guidelines/zustand/core.md": "# Zustand Core
 
-- The store holds **client-owned** state only: UI preferences, drafts, selections. Server data lives in react-query — writing fetched results into the store creates a second source of truth (flagged by \`NB-ARCH-009\`).
+- The store holds **client-owned** state only: UI preferences, drafts, selections. Server data lives in the installed Query/SWR/RSC boundary—writing fetched results into Zustand creates a second source of truth (flagged by \`NB-ARCH-009\`).
 - Small, focused stores per concern beat one global store; colocate a feature's store inside the feature.
 - Select narrowly: \`useStore((s) => s.sidebarOpen)\` — subscribing to the whole store re-renders on every change.
 - Actions live inside the store definition (\`set\`/\`get\`), components call them — no external mutation of store state.

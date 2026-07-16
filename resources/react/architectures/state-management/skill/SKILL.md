@@ -1,6 +1,6 @@
 ---
 name: state-management
-description: Choose the right home for a piece of state (react-query, useState, URL, Context, store) and keep server data out of client stores.
+description: Choose the right home for state using the repository's server cache, URL, component state, Context, or store.
 ---
 
 # State Management
@@ -11,11 +11,11 @@ Use when introducing any new state, choosing between store/context/URL, or fixin
 
 ## Procedure
 
-1. Classify: does the backend own this data? → react-query (or RSC props). Is it one component's concern? → `useState`. Should a link/refresh preserve it? → URL `searchParams`. Only genuinely shared, client-owned state goes to Context/store.
-2. Mutating server data: `useMutation`/Server Action + `invalidateQueries` — never write the response into a store.
+1. Identify the project's server-state mechanism first (RSC, TanStack Query/react-query-kit, SWR, or custom). Backend-owned data belongs there. One-component UI state → `useState`; shareable/refresh-persistent state → URL; genuinely shared client-owned state → Context/store.
+2. Mutating server data: use the established mutation API, then apply the smallest correct cache update (`setQueryData`, SWR `mutate`, returned server state, tags, or targeted invalidation). Do not copy server objects into a parallel client store.
 3. Before adding a store: check the ladder (`useState` → URL → Context → store) and justify each escalation.
 4. Deriving from existing state? Compute in render (or `useMemo` if expensive) — not `useEffect` + `setState`.
 
 ## Fixing findings
 
-- `NB-ARCH-009`: delete the store write; read the data via the query hook where it is needed. If the store held a derived selection, keep only the selection (ids), not the server objects.
+- `NB-ARCH-009`: delete the store write; read data through the established server-state boundary. If the store held a derived selection, keep only client-owned selection IDs, not server objects.

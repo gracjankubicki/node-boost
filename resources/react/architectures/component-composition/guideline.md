@@ -7,7 +7,7 @@ Pass content, not configuration. Prefer children and slots over boolean-prop swi
 1. `children` — the default.
 2. Named slots — JSX passed as props (`header={<... />}`).
 3. Compound components — `Card.Header`, `Card.Footer` sharing the parent's context.
-4. Config props — only for genuine *visual variants* (`variant="danger"`), which belong to cva (see styling guideline), not to boolean if-trees.
+4. Config props — only for genuine *visual variants* (`variant="danger"`), using the component system already installed (for example CVA or design-system props), not boolean if-trees.
 
 <code-snippet name="Composition over configuration" lang="tsx">
 // WRONG: configurator — every new need adds a prop and an if
@@ -25,7 +25,7 @@ Heuristic: the **third boolean prop** on a component is a signal it should be tw
 
 ## Boundaries
 
-Shared UI (`components/ui/`) knows no domain: no query hooks, no feature imports — data arrives via props. Domain knowledge lives in feature components (this pairs with feature-modules).
+Shared UI at the repository's established boundary knows no domain: no query hooks, no feature imports—data arrives via props. Discover that boundary from nearby code; `components/ui/` is an example, not a required path.
 
 ## Prop drilling
 
@@ -35,8 +35,9 @@ Fix by composing higher, not by reaching for Context: assemble the subtree where
 
 Interactive elements are `<button>`/`<a>`/`<label>`, not clickable `<div>`s — generated markup that looks right but breaks keyboard/screen-reader flows is a defect.
 
-## Dead idioms — do not generate
+## Version-sensitive APIs
 
-- `forwardRef` — in React 19 `ref` is a regular prop.
+- React 18: use `forwardRef` when a function component must expose a ref.
+- React 19: ref-as-prop is available for new APIs, but existing `forwardRef` wrappers remain supported and may be required for compatibility.
 - Render props for things children/hooks solve.
 - `defaultProps` on function components — use default parameters.

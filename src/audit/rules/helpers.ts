@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import picomatch from "picomatch";
 import type { AuditFile, AuditFinding } from "../rule.js";
@@ -84,17 +83,6 @@ export function isConfigFile(path: string): boolean {
 export function firstImportIndex(file: AuditFile): number {
   const index = file.lines.findIndex((line) => line.trim().startsWith("import "));
   return index >= 0 ? index : file.lines.length;
-}
-
-export function hasGeneratedClientDependency(rootDir: string): boolean {
-  try {
-    const packageJson = JSON.parse(existsSync(join(rootDir, "package.json")) ? readFileSync(join(rootDir, "package.json"), "utf8") : "{}") as {
-      devDependencies?: Record<string, string>;
-    };
-    return Boolean(packageJson.devDependencies?.orval || packageJson.devDependencies?.["openapi-typescript"]);
-  } catch {
-    return false;
-  }
 }
 
 export function toPosix(path: string): string {

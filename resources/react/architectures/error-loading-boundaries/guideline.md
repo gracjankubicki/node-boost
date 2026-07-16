@@ -23,9 +23,9 @@ app/
 </Suspense>
 </code-snippet>
 
-## Why this is structural in Next 16
+## Next 16 capability check
 
-Partial Prerendering splits the page into a static shell plus dynamic holes — and the holes are defined by Suspense boundaries. No boundaries, no PPR.
+When `next.config.*` enables Cache Components, Suspense boundaries define the dynamic holes in the cacheable shell. Without `cacheComponents: true`, do not claim that Partial Prerendering/Cache Components is active; boundaries still provide streaming and scoped loading/error UX for genuinely suspending work.
 
 ## Judgment calls
 

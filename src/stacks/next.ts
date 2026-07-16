@@ -1,6 +1,12 @@
 import type { ArchitectureSlug, DetectedStack, StackAdapter } from "../types.js";
 import { hasPackage } from "./adapter.js";
-import { commonArchitectures, nextOnlyArchitectures, sortArchitectures, tailwindArchitecture } from "./architectures.js";
+import {
+  commonArchitectures,
+  inferredCommonArchitectures,
+  nextOnlyArchitectures,
+  sortArchitectures,
+  tailwindArchitecture,
+} from "./architectures.js";
 
 export const nextStackAdapter: StackAdapter = {
   name: "next",
@@ -18,6 +24,16 @@ export const nextStackAdapter: StackAdapter = {
     return sortArchitectures(architectures);
   },
   recommendedArchitectures(stack: DetectedStack): ArchitectureSlug[] {
-    return this.applicableArchitectures(stack);
+    const architectures = inferredCommonArchitectures(stack);
+
+    if (stack.router === "app") {
+      architectures.push("server-first-components", "error-loading-boundaries", "data-access-layer");
+    }
+
+    if (hasPackage(stack, "tailwindcss")) {
+      architectures.push(tailwindArchitecture);
+    }
+
+    return sortArchitectures([...new Set(architectures)]);
   },
 };

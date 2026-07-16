@@ -33,7 +33,11 @@ export const serverFirstComponentRules: AuditRule[] = [
         }
 
         const withoutDirective = file.lines.filter((line) => !line.includes("use client")).join("\n");
-        const needsClient = /\buse[A-Z]\w*\s*\(/.test(withoutDirective) || /\bon[A-Z]\w*\s*=/.test(withoutDirective) || /\b(window|document)\./.test(withoutDirective);
+        const needsClient =
+          /\buse[A-Z]\w*\s*\(/.test(withoutDirective) ||
+          /\bon[A-Z]\w*\s*=/.test(withoutDirective) ||
+          /\b(window|document|navigator|localStorage|sessionStorage)\b/.test(withoutDirective) ||
+          /\b(?:Resize|Intersection|Mutation)Observer\b/.test(withoutDirective);
         return needsClient ? [] : [finding(file, "NB-ARCH-004", "needless-use-client", lineOf(file.content, /['"]use client['"]/))];
       });
     },
