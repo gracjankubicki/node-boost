@@ -79,3 +79,13 @@ export interface AuditResult {
   elapsedMs: number;
   findings: AuditFinding[];
 }
+
+const incompleteAuditCodes = new Set(["parse-error", "parse-timeout", "file-too-large", "file-disappeared"]);
+
+export function auditGateFailed(result: AuditResult): boolean {
+  return result.err > 0 || result.findings.some((finding) => incompleteAuditCodes.has(finding.code));
+}
+
+export function incompleteAuditFindingCount(result: AuditResult): number {
+  return result.findings.filter((finding) => incompleteAuditCodes.has(finding.code)).length;
+}

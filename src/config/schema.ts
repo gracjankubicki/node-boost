@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { auditRuleOptionSchemas, isAuditRuleId } from "../audit/definitions.js";
 
 export const agentNameSchema = z.enum(["claude-code", "codex", "cursor"]);
 
@@ -86,6 +87,38 @@ export const auditSchema = z
     exclude: z.array(z.string()).default([]),
     rules: z.record(z.string(), auditSeveritySchema).default({}),
     ruleOptions: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
+  })
+  .superRefine((audit, context) => {
+    for (const ruleId of Object.keys(audit.rules)) {
+      if (!isAuditRuleId(ruleId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["rules", ruleId],
+          message: `Unknown audit rule ${ruleId}.`,
+        });
+      }
+    }
+    for (const ruleId of Object.keys(audit.ruleOptions)) {
+      if (!isAuditRuleId(ruleId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["ruleOptions", ruleId],
+          message: `Unknown audit rule ${ruleId}.`,
+        });
+        continue;
+      }
+
+      const result = auditRuleOptionSchemas[ruleId].safeParse(audit.ruleOptions[ruleId]);
+      if (!result.success) {
+        for (const issue of result.error.issues) {
+          context.addIssue({
+            code: "custom",
+            path: ["ruleOptions", ruleId, ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
+    }
   })
   .default(defaultAudit);
 

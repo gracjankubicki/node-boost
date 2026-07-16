@@ -53,7 +53,7 @@ export async function doctorTool(rootDir: string, boostVersion: string): Promise
 
   checks.push({
     id: "generated-with-drift",
-    status: !boostConfig.config || boostConfig.config.generatedWith === boostVersion ? "pass" : "warn",
+    status: !boostConfig.config || boostConfig.config.generatedWith === boostVersion ? "pass" : "fail",
     message: !boostConfig.config
       ? "No generatedWith drift can be checked without a valid config."
       : boostConfig.config.generatedWith === boostVersion
@@ -135,7 +135,7 @@ async function resourcesFreshCheck(rootDir: string, expectedOperations: Array<{ 
 
   return {
     id: "resources-fresh",
-    status: details.length === 0 ? "pass" : "warn",
+    status: details.length === 0 ? "pass" : "fail",
     message: details.length === 0
       ? "Generated resources match current node-boost output."
       : `${details.length} generated resource issue(s) found. Run node-boost update and review conflicts.`,

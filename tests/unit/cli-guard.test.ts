@@ -12,6 +12,23 @@ const tsxCli = join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
 const cliEntry = join(repoRoot, "src", "cli", "index.ts");
 
 describe("guard CLI", () => {
+  it("fails closed when a changed file cannot be parsed", async () => {
+    await withGitProject(async (projectRoot) => {
+      await writeFile(join(projectRoot, "src", "safe.ts"), "export const safe = true;\n", "utf8");
+      await commitAll(projectRoot, "base");
+      await writeFile(join(projectRoot, "src", "broken.ts"), "export const = ;\n", "utf8");
+
+      const result = await runCli(projectRoot, ["guard", "--changed"]);
+      const report = JSON.parse(result.stdout) as { ok: boolean; err: number; skipped: number; findings: Array<{ code: string }> };
+
+      expect(result.exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.err).toBe(0);
+      expect(report.skipped).toBe(1);
+      expect(report.findings).toContainEqual(expect.objectContaining({ code: "parse-error" }));
+    });
+  }, 15_000);
+
   it("uses --base to audit the committed branch diff", async () => {
     await withGitProject(async (projectRoot) => {
       await writeFile(join(projectRoot, "src", "safe.ts"), "export const safe = true;\n", "utf8");
@@ -79,6 +96,35 @@ describe("guard CLI", () => {
       expect(malformed.stderr).not.toContain("at ");
       expect(unsafeCwd.exitCode).toBe(1);
       expect(unsafeCwd.stderr).toContain("Invalid codex hook payload");
+    });
+  }, 15_000);
+
+  it("fails closed for incomplete audits in every hook protocol", async () => {
+    await withGitProject(async (projectRoot) => {
+      await writeFile(join(projectRoot, "src", "safe.ts"), "export const safe = true;\n", "utf8");
+      await commitAll(projectRoot, "base");
+      await writeFile(join(projectRoot, "src", "broken.ts"), "export const = ;\n", "utf8");
+
+      const codex = await runCliWithInput(
+        repoRoot,
+        ["guard", "--hook", "codex"],
+        JSON.stringify({ session_id: "session-codex", cwd: projectRoot, hook_event_name: "Stop" }),
+      );
+      const claude = await runCliWithInput(
+        repoRoot,
+        ["guard", "--hook", "claude-code"],
+        JSON.stringify({ session_id: "session-claude", cwd: projectRoot, hook_event_name: "Stop", stop_hook_active: false }),
+      );
+      const cursor = await runCliWithInput(
+        repoRoot,
+        ["guard", "--hook", "cursor"],
+        JSON.stringify({ hook_event_name: "stop", workspace_roots: [projectRoot], loop_count: 0 }),
+      );
+
+      expect(JSON.parse(codex.stdout)).toMatchObject({ continue: false });
+      expect(claude.exitCode).toBe(2);
+      expect(claude.stderr).toContain("could not fully audit");
+      expect(JSON.parse(cursor.stdout)).toHaveProperty("followup_message");
     });
   }, 15_000);
 });

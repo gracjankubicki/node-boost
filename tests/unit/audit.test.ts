@@ -138,6 +138,22 @@ describe("audit engine", () => {
     });
   });
 
+  it("bounds AST input size before parsing pathological source files", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeMinimalProject(projectRoot);
+      await writeFile(join(projectRoot, "src", "oversized.ts"), `// ${"x".repeat(2 * 1024 * 1024)}\n`, "utf8");
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+
+      expect(result.skipped).toBe(1);
+      expect(result.findings).toContainEqual(expect.objectContaining({
+        rule: "NB-META-003",
+        code: "file-too-large",
+        file: "src/oversized.ts",
+      }));
+    });
+  });
+
   it("supports suppression reasons, missing-reason warnings, ruleOptions, and feature boundary variants", async () => {
     await withFixture("dirty-next-app", async (projectRoot) => {
       const pagePath = join(projectRoot, "src/app/page.tsx");

@@ -128,7 +128,7 @@ describe("install orchestrator", () => {
       await removeArchitecture(projectRoot, "feature-modules");
 
       const beforeUpdate = await doctorTool(projectRoot, "0.1.0");
-      expect(beforeUpdate.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "warn" }));
+      expect(beforeUpdate.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "fail" }));
 
       const first = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
       expect(first.operations).toContainEqual(expect.objectContaining({
@@ -162,7 +162,7 @@ describe("install orchestrator", () => {
 
       const doctor = await doctorTool(projectRoot, "0.1.0");
       const freshness = doctor.checks.find((check) => check.id === "resources-fresh");
-      expect(freshness).toMatchObject({ status: "warn" });
+      expect(freshness).toMatchObject({ status: "fail" });
       expect(freshness?.details).toContain(`modified: ${modifiedPath}`);
     });
   });

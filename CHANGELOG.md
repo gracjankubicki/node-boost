@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-07-16
+
+- Made `guard` and agent hooks fail closed when source files cannot be fully audited.
+- Added a pre-AST source-size limit so pathological files cannot create an unbounded parse step.
+- Made `install`, `update`, and `doctor` return failure for conflicts, drift, and stale generated state.
+- Added strict rule-ID and per-rule option validation to runtime config and the generated JSON Schema.
+- Replaced executable plugin entrypoints with versioned static `node-boost.plugin.json` manifests.
+- Added Node 20/22/24 CI, a Windows lifecycle smoke, and trusted npm publishing with provenance.
+- Updated the build dependency tree to remove the reported esbuild advisory.
+
+## 0.2.0 - 2026-07-15
 
 - Added the content-only `@node-boost/node-boost/plugin` contract with strict runtime validation.
 - Added explicit plugin loading, namespaced architectures, variants, owned-resource cleanup, doctor/MCP reporting, and packed plugin smoke coverage.

@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import { runAudit } from "../../audit/engine.js";
+import { auditGateFailed } from "../../audit/rule.js";
 import { renderAgentReport } from "../../audit/reporters/agent.js";
 import { runGuardHook, unsupportedHookAgent } from "../../hooks/adapter.js";
 import { InvalidHookPayloadError, parseHookPayload } from "../../hooks/payload.js";
@@ -38,8 +39,9 @@ export const guardCommand = defineCommand({
       }
 
       const result = await runAudit(auditOptionsFromArgs(args, "changed"));
-      process.stdout.write(renderAgentReport(result));
-      process.exitCode = result.err > 0 ? 1 : 0;
+      const failed = auditGateFailed(result);
+      process.stdout.write(renderAgentReport(failed ? { ...result, ok: false } : result));
+      process.exitCode = failed ? 1 : 0;
     } catch (error) {
       if (error instanceof InvalidHookPayloadError) {
         process.stderr.write(`${error.message}\n`);

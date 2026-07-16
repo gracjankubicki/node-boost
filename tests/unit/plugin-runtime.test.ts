@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,7 @@ describe("content-only plugin runtime", () => {
       await configurePlugin(projectRoot, { plugins: [pluginName], architectures: [{ name: architectureName, variant: "strict" }] });
 
       const first = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      await expect(access(join(projectRoot, "plugin-entrypoint-executed"))).rejects.toThrow();
       const guidelinePath = ".ai/guidelines/architectures/plugins/@acme/node-boost-plugin/service-layer.md";
       const skillPath = ".ai/skills/plugins/@acme/node-boost-plugin/service-layer/SKILL.md";
       expect(first.operations).toContainEqual(expect.objectContaining({ path: guidelinePath, status: "created" }));
@@ -61,6 +62,19 @@ describe("content-only plugin runtime", () => {
       expect(await snapshotGenerated(projectRoot)).toEqual(before);
     });
   });
+
+  it("rejects the legacy executable contract without importing it", async () => {
+    await withConsumer(async (projectRoot) => {
+      await writeLegacyPlugin(projectRoot);
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      await configurePlugin(projectRoot, { plugins: [pluginName], architectures: [architectureName] });
+
+      await expect(runUpdate({ cwd: projectRoot, packageRoot: repoRoot })).rejects.toThrow(
+        "unsupported executable entrypoint contract",
+      );
+      await expect(access(join(projectRoot, "plugin-entrypoint-executed"))).rejects.toThrow();
+    });
+  });
 });
 
 async function withConsumer(fn: (projectRoot: string) => Promise<void>): Promise<void> {
@@ -79,32 +93,57 @@ async function writePlugin(
 ): Promise<void> {
   const root = join(projectRoot, "node_modules", "@acme", "node-boost-plugin");
   await mkdir(join(root, "resources"), { recursive: true });
+  const definition = {
+    apiVersion: 1,
+    name: pluginName,
+    architectures: [{
+      slug: "service-layer",
+      title: "Service layer",
+      stacks: options.stacks,
+      resources: {
+        guideline: options.guideline ?? "resources/guideline.md",
+        skill: "resources/SKILL.md",
+        variants: { strict: { guideline: "resources/strict.md" } },
+      },
+    }],
+  };
   await writeFile(
     join(root, "package.json"),
-    JSON.stringify({ name: pluginName, version: "1.0.0", type: "module", exports: "./index.js" }),
+    JSON.stringify({
+      name: pluginName,
+      version: "1.0.0",
+      type: "module",
+      exports: {
+        ".": "./index.js",
+        "./node-boost.plugin.json": "./node-boost.plugin.json",
+      },
+    }),
     "utf8",
   );
+  await writeFile(join(root, "node-boost.plugin.json"), JSON.stringify(definition), "utf8");
   await writeFile(
     join(root, "index.js"),
-    `export default ${JSON.stringify({
-      apiVersion: 1,
-      name: pluginName,
-      architectures: [{
-        slug: "service-layer",
-        title: "Service layer",
-        stacks: options.stacks,
-        resources: {
-          guideline: options.guideline ?? "resources/guideline.md",
-          skill: "resources/SKILL.md",
-          variants: { strict: { guideline: "resources/strict.md" } },
-        },
-      }],
-    })};\n`,
+    `import { writeFileSync } from "node:fs";\nwriteFileSync(new URL("../../../plugin-entrypoint-executed", import.meta.url), "executed");\nexport default ${JSON.stringify(definition)};\n`,
     "utf8",
   );
   await writeFile(join(root, "resources", "guideline.md"), "# Service layer\n", "utf8");
   await writeFile(join(root, "resources", "strict.md"), "# Strict service layer\n", "utf8");
   await writeFile(join(root, "resources", "SKILL.md"), "# Service layer skill\n", "utf8");
+}
+
+async function writeLegacyPlugin(projectRoot: string): Promise<void> {
+  const root = join(projectRoot, "node_modules", "@acme", "node-boost-plugin");
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ name: pluginName, version: "0.2.0", type: "module", exports: "./index.js" }),
+    "utf8",
+  );
+  await writeFile(
+    join(root, "index.js"),
+    'import { writeFileSync } from "node:fs";\nwriteFileSync(new URL("../../../plugin-entrypoint-executed", import.meta.url), "executed");\nexport default {};\n',
+    "utf8",
+  );
 }
 
 async function configurePlugin(

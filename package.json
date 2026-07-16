@@ -1,6 +1,6 @@
 {
   "name": "@node-boost/node-boost",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "CLI and MCP guidance layer for Node/React projects.",
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,8 @@
   },
   "homepage": "https://github.com/gracjankubicki/node-boost#readme",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "keywords": [
     "node",
@@ -58,6 +59,8 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "smoke:pack": "tsx scripts/pack-smoke.ts",
     "smoke:plugin": "tsx scripts/plugin-pack-smoke.ts",
+    "release:check": "tsx scripts/release-check.ts",
+    "release:readback": "tsx scripts/registry-readback.ts",
     "prepack": "npm run build",
     "prepublishOnly": "npm run check && npm run smoke:pack && npm run smoke:plugin"
   },
@@ -80,5 +83,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }

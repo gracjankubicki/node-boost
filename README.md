@@ -13,9 +13,11 @@ npx node-boost install
 
 The npm package is published as `@node-boost/node-boost`; the installed CLI binary is `node-boost`.
 
-Content-only extension authors use the intentionally small `@node-boost/node-boost/plugin`
-subpath. It exposes `defineNodeBoostPlugin` and its TypeScript types; installer, MCP, and
-audit internals are not available from that subpath.
+Content-only extensions publish a versioned `node-boost.plugin.json` manifest. node-boost
+resolves and validates that manifest without importing the plugin package entrypoint. The
+intentionally small `@node-boost/node-boost/plugin` subpath remains available to plugin
+authoring tools for validation and TypeScript types; installer, MCP, and audit internals are
+not exposed.
 
 The installer detects your stack, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, and configures selected agents:
 
@@ -126,7 +128,7 @@ npx node-boost update
 {
   "$schema": "./.ai/node-boost.schema.json",
   "version": 1,
-  "generatedWith": "0.2.0",
+  "generatedWith": "0.3.0",
   "stack": "next",
   "agents": ["claude-code", "codex", "cursor"],
   "plugins": ["@acme/node-boost-plugin"],
@@ -165,41 +167,51 @@ Release candidates are verified from a clean source checkout with `npm run smoke
 ## Content-only plugins
 
 Plugins are installed as ordinary project dependencies and must be listed explicitly in
-`plugins`. There is no auto-discovery or remote download. A plugin author imports only the
-public subpath:
+`plugins`. There is no auto-discovery or remote download. The package must export its static
+manifest as `./node-boost.plugin.json`:
 
-```ts
-import { defineNodeBoostPlugin } from "@node-boost/node-boost/plugin";
+```json
+{
+  "name": "@acme/node-boost-plugin",
+  "version": "1.0.0",
+  "exports": {
+    "./node-boost.plugin.json": "./node-boost.plugin.json"
+  },
+  "files": ["node-boost.plugin.json", "resources"]
+}
+```
 
-export default defineNodeBoostPlugin({
-  apiVersion: 1,
-  name: "@acme/node-boost-plugin",
-  architectures: [{
-    slug: "service-layer",
-    title: "Service layer",
-    stacks: ["next", "vite-react"],
-    resources: {
-      guideline: "resources/service-layer/guideline.md",
-      skill: "resources/service-layer/SKILL.md",
-      variants: {
-        strict: { guideline: "resources/service-layer/strict.md" }
+```json
+{
+  "apiVersion": 1,
+  "name": "@acme/node-boost-plugin",
+  "architectures": [{
+    "slug": "service-layer",
+    "title": "Service layer",
+    "stacks": ["next", "vite-react"],
+    "resources": {
+      "guideline": "resources/service-layer/guideline.md",
+      "skill": "resources/service-layer/SKILL.md",
+      "variants": {
+        "strict": { "guideline": "resources/service-layer/strict.md" }
       }
     }
   }]
-});
+}
 ```
 
 Plugin resource paths are package-relative, cannot traverse outside the package, and are
 validated before node-boost writes any generated files. Plugins are content-only: executable
-third-party audit rules are rejected. Importing an explicitly configured plugin executes its
-package entrypoint, so only install and configure dependencies you trust.
+third-party audit rules are rejected. The plugin entrypoint is never imported; packages using
+the executable `0.2.0` default-export contract receive a migration error instead.
 
 ## Interface stability
 
 The CLI commands, their machine-readable reports, and MCP tools are the stable product surface.
-Since `0.2.0`, the package root is intentionally not a JavaScript API. Custom architecture
-extensions use the dedicated `@node-boost/node-boost/plugin` subpath, which exposes only the
-content-plugin contract. Imports from package internals are unsupported.
+Since `0.2.0`, the package root is intentionally not a JavaScript API. Since `0.3.0`, custom
+architecture extensions use the static manifest contract. Authoring tools may use the dedicated
+`@node-boost/node-boost/plugin` subpath, which exposes only content-plugin validation and types.
+Imports from package internals are unsupported.
 
 ## CI
 

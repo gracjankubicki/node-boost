@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createNodeBoostJsonSchema } from "../../src/config/json-schema.js";
+import { auditRuleIds } from "../../src/audit/definitions.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -12,5 +13,30 @@ describe("schema.json", () => {
     const schema: unknown = JSON.parse(await readFile(schemaPath, "utf8"));
 
     expect(schema).toEqual(createNodeBoostJsonSchema());
+  });
+
+  it("enumerates supported audit rules and their option shapes", () => {
+    expect(createNodeBoostJsonSchema()).toMatchObject({
+      properties: {
+        audit: {
+          properties: {
+            rules: { propertyNames: { enum: auditRuleIds } },
+            ruleOptions: {
+              additionalProperties: false,
+              properties: {
+                "NB-ARCH-005": {
+                  properties: { dataLayerGlobs: { type: "array" } },
+                  additionalProperties: false,
+                },
+                "NB-ARCH-011": {
+                  properties: { sanitizers: { type: "array" } },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
   });
 });

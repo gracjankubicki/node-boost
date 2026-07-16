@@ -122,8 +122,8 @@ describe("node-boost MCP server", () => {
       expect(drift.ok).toBe(false);
       expect(drift.checks).toContainEqual({
         id: "generated-with-drift",
-        status: "warn",
-          message: "generatedWith is 0.0.1, package is 0.2.0. Run node-boost update.",
+        status: "fail",
+          message: "generatedWith is 0.0.1, package is 0.3.0. Run node-boost update.",
       });
       expect(drift.checks).toContainEqual(expect.objectContaining({ id: "agent-files-present", status: "fail" }));
 
@@ -142,8 +142,8 @@ describe("node-boost MCP server", () => {
       const staleClient = await createClient(projectRoot);
       const stale = await callJsonTool<DoctorResult>(staleClient, "doctor");
 
-      expect(stale.ok).toBe(true);
-      expect(stale.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "warn" }));
+      expect(stale.ok).toBe(false);
+      expect(stale.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "fail" }));
     });
   });
 
