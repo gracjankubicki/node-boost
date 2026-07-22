@@ -143,6 +143,35 @@ describe("detectStack", () => {
     }
   });
 
+  it("only reads capabilities from configuration files that own them", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-scoped-capability-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { next: "^16.0.0", react: "^19.0.0" } }, null, 2),
+        "utf8",
+      );
+      await writeFile(join(rootDir, "next.config.ts"), "export default { cacheComponents: false, reactCompiler: false };\n", "utf8");
+      await writeFile(
+        join(rootDir, "babel.config.js"),
+        "module.exports = { cacheComponents: true, reactCompiler: true, plugins: [] };\n",
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "vite.config.ts"),
+        "export default { cacheComponents: true, reactCompiler: true };\n",
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.capabilities).toEqual({ reactCompiler: false, nextCacheComponents: false });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("recognizes the React Compiler only in a structural Babel plugins entry", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "node-boost-babel-capability-"));
 

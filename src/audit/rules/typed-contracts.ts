@@ -80,22 +80,27 @@ function isJsonBoundaryCall(call: CallExpression): boolean {
 
 function isBoundaryValidated(boundary: CallExpression, sourceFile: SourceFile, bindings: ValidatorBindings): boolean {
   if (boundary.getAncestors().filter(Node.isCallExpression).some((call) =>
-    isValidatorCall(call, bindings) && validatorResultIsUsed(call, sourceFile),
+    isValidatorCall(call, bindings)
+    && directlyConsumesNode(call, boundary)
+    && validatorResultIsUsed(call, sourceFile),
   )) {
     return true;
   }
 
   const declaration = boundary.getFirstAncestorByKind(SyntaxKind.VariableDeclaration);
   const nameNode = declaration?.getNameNode();
-  if (!nameNode || !Node.isIdentifier(nameNode)) {
+  if (!declaration || !nameNode || !Node.isIdentifier(nameNode)) {
     return false;
   }
 
   const variableName = nameNode.getText();
   return sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
     isValidatorCall(call, bindings)
+    && call.getStart() > declaration.getEnd()
+    && sameLexicalBlock(declaration, call)
     && validatorResultIsUsed(call, sourceFile)
-    && call.getArguments().some((argument) => expressionReferencesIdentifier(argument, variableName)),
+    && call.getArguments().some((argument) => directlyReferencesIdentifier(argument, variableName))
+    && !identifierIsUsedAfterCall(nameNode, call),
   );
 }
 
@@ -206,12 +211,52 @@ function validatorResultIsUsed(call: CallExpression, sourceFile: SourceFile): bo
   if (!Node.isIdentifier(nameNode)) {
     return true;
   }
-  return nameNode.findReferencesAsNodes().some((reference) => reference.getSourceFile() === sourceFile);
+  return nameNode.findReferencesAsNodes().some((reference) =>
+    reference.getSourceFile() === sourceFile && reference.getStart() > call.getEnd(),
+  );
 }
 
-function expressionReferencesIdentifier(node: Node, identifierName: string): boolean {
-  return (Node.isIdentifier(node) && node.getText() === identifierName)
-    || node.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) => identifier.getText() === identifierName);
+function directlyConsumesNode(call: CallExpression, target: Node): boolean {
+  return call.getArguments().some((argument) => unwrapDirectValue(argument).compilerNode === target.compilerNode);
+}
+
+function directlyReferencesIdentifier(node: Node, identifierName: string): boolean {
+  const directValue = unwrapDirectValue(node);
+  return Node.isIdentifier(directValue) && directValue.getText() === identifierName;
+}
+
+function unwrapDirectValue(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current)
+    || Node.isAsExpression(current)
+    || Node.isTypeAssertion(current)
+    || Node.isNonNullExpression(current)
+    || Node.isSatisfiesExpression(current)
+    || Node.isAwaitExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+function sameLexicalBlock(first: Node, second: Node): boolean {
+  const firstBlock = first.getFirstAncestorByKind(SyntaxKind.Block);
+  const secondBlock = second.getFirstAncestorByKind(SyntaxKind.Block);
+  if (!firstBlock || !secondBlock) {
+    return !firstBlock && !secondBlock && first.getSourceFile() === second.getSourceFile();
+  }
+  return firstBlock.compilerNode === secondBlock.compilerNode;
+}
+
+function identifierIsUsedAfterCall(identifier: Node, call: CallExpression): boolean {
+  if (!Node.isIdentifier(identifier)) {
+    return true;
+  }
+  return identifier.findReferencesAsNodes().some((reference) =>
+    reference.getSourceFile() === call.getSourceFile()
+    && reference.getStart() > call.getEnd(),
+  );
 }
 
 function isGeneratedFile(file: AuditFile): boolean {

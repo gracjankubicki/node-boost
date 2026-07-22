@@ -122,18 +122,20 @@ async function detectCapabilities(rootDir: string, packageJson: PackageJson): Pr
       overwrite: true,
       scriptKind: scriptKindFor(fileName),
     });
+    const isNextConfig = fileName.startsWith("next.config.");
+    const ownsCompilerPlugins = fileName.startsWith("vite.config.") || fileName.startsWith("babel.config.");
 
     for (const property of sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAssignment)) {
       const name = propertyName(property.getNameNode());
       const initializer = unwrapExpression(property.getInitializer());
 
-      if (name === "reactCompiler" && initializer && (Node.isTrueLiteral(initializer) || Node.isObjectLiteralExpression(initializer))) {
+      if (isNextConfig && name === "reactCompiler" && initializer && (Node.isTrueLiteral(initializer) || Node.isObjectLiteralExpression(initializer))) {
         capabilities.reactCompiler = true;
       }
-      if (name === "cacheComponents" && initializer && Node.isTrueLiteral(initializer)) {
+      if (isNextConfig && name === "cacheComponents" && initializer && Node.isTrueLiteral(initializer)) {
         capabilities.nextCacheComponents = true;
       }
-      if (name === "plugins" && initializer && Node.isArrayLiteralExpression(initializer) && hasCompilerPluginElement(initializer.getElements())) {
+      if (ownsCompilerPlugins && name === "plugins" && initializer && Node.isArrayLiteralExpression(initializer) && hasCompilerPluginElement(initializer.getElements())) {
         capabilities.reactCompiler = true;
       }
     }
