@@ -5,10 +5,22 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildInstallOperations, runInstall, runUpdate } from "../../src/install/orchestrator.js";
 import { detectStack } from "../../src/detect/stack.js";
+import { createPackageCommand } from "../../src/agents/agent.js";
+import { doctorTool } from "../../src/mcp/tools/doctor.js";
+import { runAudit } from "../../src/audit/engine.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 describe("install orchestrator", () => {
+  it.each([
+    ["npm", { command: "npm", args: ["exec", "--", "node-boost", "guard", "--hook", "codex"] }],
+    ["pnpm", { command: "pnpm", args: ["exec", "node-boost", "guard", "--hook", "codex"] }],
+    ["yarn", { command: "yarn", args: ["node-boost", "guard", "--hook", "codex"] }],
+    ["bun", { command: "bunx", args: ["node-boost", "guard", "--hook", "codex"] }],
+  ] as const)("creates an exact %s package command", (packageManager, expected) => {
+    expect(createPackageCommand(packageManager, ["guard", "--hook", "codex"])).toEqual(expected);
+  });
+
   it.each(["next-app", "vite-app"])("installs all agents for %s and is idempotent", async (fixtureName) => {
     await withFixture(fixtureName, async (projectRoot) => {
       const first = await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
@@ -35,6 +47,22 @@ describe("install orchestrator", () => {
     });
   });
 
+  it("installs Vite guidance without the routing skill when React Router is absent", async () => {
+    await withFixture("vite-no-router", async (projectRoot) => {
+      const result = await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const paths = result.operations.map((operation) => operation.path);
+
+      expect(result.stack).toMatchObject({ name: "vite-react", router: "none" });
+      expect(paths).toContain(".ai/guidelines/vite/core.md");
+      expect(paths).toContain(".ai/skills/react-development/SKILL.md");
+      expect(paths).not.toContain(".ai/skills/spa-routing/SKILL.md");
+
+      await writeFile(join(projectRoot, "src/runtime.ts"), "export const api = process.env.API_URL;\n", "utf8");
+      const audit = await runAudit({ rootDir: projectRoot, mode: "all" });
+      expect(audit.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-008", file: "src/runtime.ts" }));
+    });
+  });
+
   it("reports missing package.json and invalid update config", async () => {
     await withTempDir(async (emptyDir) => {
       await expect(runInstall({ cwd: emptyDir, packageRoot: repoRoot, noInteraction: true })).rejects.toThrow(
@@ -46,6 +74,229 @@ describe("install orchestrator", () => {
       await writeFile(join(projectRoot, "node-boost.json"), JSON.stringify({ version: 2, stack: "next" }), "utf8");
 
       await expect(runUpdate({ cwd: projectRoot, packageRoot: repoRoot })).rejects.toThrow("Invalid node-boost.json");
+    });
+  });
+
+  it("writes a resolvable local schema and refreshes generatedWith on update", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const installed = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
+        $schema: string;
+        generatedWith: string;
+      };
+
+      expect(installed.$schema).toBe("./.ai/node-boost.schema.json");
+      await expect(readFile(join(projectRoot, installed.$schema), "utf8")).resolves.toContain("node-boost configuration");
+
+      const upgradedPackageRoot = join(projectRoot, ".test-node-boost-package");
+      await mkdir(upgradedPackageRoot, { recursive: true });
+      await cp(join(repoRoot, "resources"), join(upgradedPackageRoot, "resources"), { recursive: true });
+      await cp(join(repoRoot, "schema.json"), join(upgradedPackageRoot, "schema.json"));
+      await writeFile(join(upgradedPackageRoot, "package.json"), JSON.stringify({ version: "0.1.1" }), "utf8");
+
+      const first = await runUpdate({ cwd: projectRoot, packageRoot: upgradedPackageRoot });
+      expect(first.config.generatedWith).toBe("0.1.1");
+      const updated = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as { generatedWith: string };
+      expect(updated.generatedWith).toBe("0.1.1");
+
+      const second = await runUpdate({ cwd: projectRoot, packageRoot: upgradedPackageRoot });
+      expect(second.operations.every((operation) => operation.status === "skipped")).toBe(true);
+    });
+  });
+
+  it("does not parse broken integration files for disabled features", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      await updateConfig(projectRoot, (config) => {
+        config.features.mcp = false;
+        config.features.hooks = false;
+        config.hookAgents = [];
+      });
+      await writeFile(join(projectRoot, ".mcp.json"), "{ invalid", "utf8");
+      await writeFile(join(projectRoot, ".codex/config.toml"), "[invalid", "utf8");
+      await writeFile(join(projectRoot, ".cursor/mcp.json"), "{ invalid", "utf8");
+      await writeFile(join(projectRoot, ".claude/settings.json"), "{ invalid", "utf8");
+      await writeFile(join(projectRoot, ".codex/hooks.json"), "{ invalid", "utf8");
+      await writeFile(join(projectRoot, ".cursor/hooks.json"), "{ invalid", "utf8");
+
+      await expect(runUpdate({ cwd: projectRoot, packageRoot: repoRoot })).resolves.toBeDefined();
+    });
+  });
+
+  it("removes stale owned resources and converges on the second update", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      await removeArchitecture(projectRoot, "modern-typescript");
+
+      const beforeUpdate = await doctorTool(projectRoot, "0.1.0");
+      expect(beforeUpdate.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "fail" }));
+
+      const first = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      expect(first.operations).toContainEqual(expect.objectContaining({
+        path: ".ai/guidelines/architectures/modern-typescript.md",
+        status: "deleted",
+      }));
+      await expect(readFile(join(projectRoot, ".ai/guidelines/architectures/modern-typescript.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".ai/skills/modern-typescript/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".agents/skills/modern-typescript/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".claude/skills/modern-typescript/SKILL.md"), "utf8")).rejects.toThrow();
+
+      const second = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      expect(second.operations.every((operation) => operation.status === "skipped")).toBe(true);
+    });
+  });
+
+  it("preserves modified owned and never-owned files with a conflict", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const modifiedPath = ".ai/guidelines/architectures/modern-typescript.md";
+      const customPath = ".ai/guidelines/my-team.md";
+      await writeFile(join(projectRoot, modifiedPath), "# My edited guidance\n", "utf8");
+      await writeFile(join(projectRoot, customPath), "# Never owned\n", "utf8");
+      await removeArchitecture(projectRoot, "modern-typescript");
+
+      const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+
+      expect(result.operations).toContainEqual(expect.objectContaining({ path: modifiedPath, status: "conflict" }));
+      await expect(readFile(join(projectRoot, modifiedPath), "utf8")).resolves.toBe("# My edited guidance\n");
+      await expect(readFile(join(projectRoot, customPath), "utf8")).resolves.toBe("# Never owned\n");
+
+      const doctor = await doctorTool(projectRoot, "0.1.0");
+      const freshness = doctor.checks.find((check) => check.id === "resources-fresh");
+      expect(freshness).toMatchObject({ status: "fail" });
+      expect(freshness?.details).toContain(`modified: ${modifiedPath}`);
+    });
+  });
+
+  it("migrates without a manifest conservatively", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const stalePath = ".ai/guidelines/architectures/modern-typescript.md";
+      await rm(join(projectRoot, ".node-boost/generated-manifest.json"));
+      await removeArchitecture(projectRoot, "modern-typescript");
+
+      const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+
+      expect(result.operations).not.toContainEqual(expect.objectContaining({ path: stalePath, status: "deleted" }));
+      await expect(readFile(join(projectRoot, stalePath), "utf8")).resolves.toBeTypeOf("string");
+      const manifest = JSON.parse(await readFile(join(projectRoot, ".node-boost/generated-manifest.json"), "utf8")) as {
+        version: number;
+        files: Array<{ path: string; sha256: string }>;
+      };
+      expect(manifest.version).toBe(1);
+      expect(manifest.files.some((file) => file.path === stalePath)).toBe(false);
+    });
+  });
+
+  it("normalizes legacy Windows ownership paths before update", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const manifestPath = join(projectRoot, ".node-boost/generated-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        files: Array<{ path: string; sha256: string }>;
+      };
+      manifest.files = manifest.files.map((file) => ({ ...file, path: file.path.replaceAll("/", "\\") }));
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+      const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      const updatedManifest = await readFile(manifestPath, "utf8");
+
+      expect(
+        result.operations.every((operation) =>
+          operation.status === "skipped"
+          || (operation.path === ".node-boost/generated-manifest.json" && operation.status === "updated"),
+        ),
+      ).toBe(true);
+      expect(updatedManifest).not.toContain("\\\\");
+    });
+  });
+
+  it("unmerges disabled agents, MCP servers, and hooks while preserving foreign content", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await Promise.all([
+        mkdir(join(projectRoot, ".claude"), { recursive: true }),
+        mkdir(join(projectRoot, ".codex"), { recursive: true }),
+        mkdir(join(projectRoot, ".cursor"), { recursive: true }),
+      ]);
+      await writeFile(join(projectRoot, "CLAUDE.md"), "before claude\n\nafter claude\n", "utf8");
+      await writeFile(join(projectRoot, "AGENTS.md"), "before agents\n\nafter agents\n", "utf8");
+      await writeFile(join(projectRoot, ".mcp.json"), JSON.stringify({ mcpServers: { other: { command: "other" } } }), "utf8");
+      await writeFile(join(projectRoot, ".codex/config.toml"), '[mcp_servers.other]\ncommand = "other"\n', "utf8");
+      await writeFile(join(projectRoot, ".cursor/mcp.json"), JSON.stringify({ mcpServers: { other: { command: "other" } } }), "utf8");
+
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      await writeFile(
+        join(projectRoot, ".claude/settings.json"),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "foreign-claude" }] }] } }),
+        "utf8",
+      );
+      await writeFile(
+        join(projectRoot, ".codex/hooks.json"),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "foreign-codex" }] }] } }),
+        "utf8",
+      );
+      await writeFile(
+        join(projectRoot, ".cursor/hooks.json"),
+        JSON.stringify({ version: 1, hooks: { stop: [{ command: "foreign-cursor" }] } }),
+        "utf8",
+      );
+      await updateConfig(projectRoot, (config) => {
+        config.features.hooks = true;
+        config.hookAgents = ["claude-code", "codex", "cursor"];
+      });
+      await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+
+      await updateConfig(projectRoot, (config) => {
+        config.agents = [];
+        config.hookAgents = [];
+        config.features.mcp = false;
+        config.features.hooks = false;
+      });
+      const before = await doctorTool(projectRoot, "0.1.0");
+      expect(before.checks).toContainEqual(expect.objectContaining({ id: "agent-files-present", status: "fail" }));
+      expect(before.checks).toContainEqual(expect.objectContaining({ id: "hooks-wired", status: "fail" }));
+
+      const first = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      expect(first.operations.some((operation) => operation.status === "updated" || operation.status === "deleted")).toBe(true);
+
+      const claude = await readFile(join(projectRoot, "CLAUDE.md"), "utf8");
+      const agents = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
+      expect(claude).toContain("before claude\n\nafter claude");
+      expect(claude).not.toContain("node-boost:start");
+      expect(agents).toContain("before agents\n\nafter agents");
+      expect(agents).not.toContain("node-boost:start");
+
+      for (const path of [".mcp.json", ".cursor/mcp.json"]) {
+        const parsed = JSON.parse(await readFile(join(projectRoot, path), "utf8")) as { mcpServers: Record<string, unknown> };
+        expect(parsed.mcpServers.other).toEqual({ command: "other" });
+        expect(parsed.mcpServers["node-boost"]).toBeUndefined();
+      }
+      const codexToml = await readFile(join(projectRoot, ".codex/config.toml"), "utf8");
+      expect(codexToml).toContain("[mcp_servers.other]");
+      expect(codexToml).not.toContain("mcp_servers.node-boost");
+
+      for (const [path, foreign] of [
+        [".claude/settings.json", "foreign-claude"],
+        [".codex/hooks.json", "foreign-codex"],
+        [".cursor/hooks.json", "foreign-cursor"],
+      ] as const) {
+        const content = await readFile(join(projectRoot, path), "utf8");
+        expect(content).toContain(foreign);
+        expect(content).not.toContain("node-boost guard --hook");
+      }
+
+      await expect(readFile(join(projectRoot, ".agents/skills/react-development/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".claude/skills/react-development/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".cursor/rules/node-boost.mdc"), "utf8")).rejects.toThrow();
+
+      const after = await doctorTool(projectRoot, "0.1.0");
+      expect(after.checks).toContainEqual(expect.objectContaining({ id: "agent-files-present", status: "pass" }));
+      expect(after.checks).toContainEqual(expect.objectContaining({ id: "hooks-wired", status: "pass" }));
+
+      const tree = await snapshotTree(projectRoot);
+      const second = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      expect(second.operations.every((operation) => operation.status === "skipped")).toBe(true);
+      expect(await snapshotTree(projectRoot)).toEqual(tree);
     });
   });
 
@@ -81,7 +332,7 @@ describe("install orchestrator", () => {
       expect(agents).toContain(".agents/skills");
       expect(agents).toContain(".ai/docs/llms.txt");
       expect(mcpJson.mcpServers.other).toEqual({ command: "other", args: ["serve"] });
-      expect(mcpJson.mcpServers["node-boost"]).toEqual({ command: "npm", args: ["exec", "node-boost", "mcp"] });
+      expect(mcpJson.mcpServers["node-boost"]).toEqual({ command: "npm", args: ["exec", "--", "node-boost", "mcp"] });
       expect(codexToml).toContain("[mcp_servers.other]");
       expect(codexToml).toContain("[mcp_servers.node-boost]");
     });
@@ -162,6 +413,31 @@ describe("install orchestrator", () => {
       expect(JSON.stringify(codex)).toContain("node-boost guard --hook codex");
       expect(JSON.stringify(cursor)).toContain("other-cursor");
       expect(JSON.stringify(cursor)).toContain("node-boost guard --hook cursor");
+    });
+  });
+
+  it("generates blocking hooks only for explicitly selected agents", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      const operations = await buildInstallOperations({
+        packageRoot: repoRoot,
+        projectRoot,
+        stack: await detectStack(projectRoot),
+        config: {
+          version: 1,
+          generatedWith: "0.1.0",
+          stack: "next",
+          agents: ["claude-code", "codex", "cursor"],
+          hookAgents: ["codex"],
+          features: { guidelines: true, skills: true, mcp: true, architecture: true, hooks: true },
+          architectures: [],
+          audit: { exclude: [], rules: {}, ruleOptions: {} },
+        },
+      });
+      const paths = operations.map((operation) => operation.path);
+
+      expect(paths).toContain(".codex/hooks.json");
+      expect(paths).not.toContain(".claude/settings.json");
+      expect(paths).not.toContain(".cursor/hooks.json");
     });
   });
 
@@ -253,4 +529,26 @@ function parseJsonObject(content: string): Record<string, unknown> {
   }
 
   return parsed as Record<string, unknown>;
+}
+
+async function removeArchitecture(projectRoot: string, architecture: string): Promise<void> {
+  const path = join(projectRoot, "node-boost.json");
+  const config = JSON.parse(await readFile(path, "utf8")) as { architectures: Array<string | { name: string }> };
+  config.architectures = config.architectures.filter((entry) =>
+    typeof entry === "string" ? entry !== architecture : entry.name !== architecture,
+  );
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+interface MutableTestConfig {
+  agents: Array<"claude-code" | "codex" | "cursor">;
+  hookAgents?: Array<"claude-code" | "codex" | "cursor">;
+  features: { mcp: boolean; hooks: boolean };
+}
+
+async function updateConfig(projectRoot: string, mutate: (config: MutableTestConfig) => void): Promise<void> {
+  const path = join(projectRoot, "node-boost.json");
+  const config = JSON.parse(await readFile(path, "utf8")) as MutableTestConfig;
+  mutate(config);
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }

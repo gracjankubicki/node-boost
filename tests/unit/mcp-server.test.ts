@@ -30,7 +30,11 @@ describe("node-boost MCP server", () => {
       expect(result.capabilities).toEqual({ reactCompiler: false, nextCacheComponents: false });
       expect(result.packages.react).toBe("19.2.7");
       expect(result.boost?.generatedWith).toBe("0.1.0");
-      expect(result.boost?.architectures).toContainEqual({ name: "feature-modules", options: { boundary: "forbid" } });
+      expect(result.boost?.architectures).toContainEqual(expect.objectContaining({
+        name: "feature-modules",
+        options: { boundary: "forbid" },
+        source: "built-in",
+      }));
     });
 
     await withFixture("vite-app", async (projectRoot) => {
@@ -41,7 +45,7 @@ describe("node-boost MCP server", () => {
       expect(result.packageManager).toBe("pnpm@10.0.0");
       expect(result.stack).toEqual({ name: "vite-react", version: "6.0.0", router: "react-router", srcDir: false });
       expect(result.packages["@tanstack/react-query"]).toBe("5.0.0");
-      expect(result.boost?.architectures).toContainEqual({ name: "state-management", options: {} });
+      expect(result.boost?.architectures).toContainEqual({ name: "state-management", options: {}, source: "built-in" });
     });
   });
 
@@ -110,8 +114,8 @@ describe("node-boost MCP server", () => {
       expect(result.indexPath).toBe(".ai/docs/llms.txt");
       expect(next).toMatchObject({
         version: "16.2.9",
-        preferredUrl: "https://nextjs.org/docs/llms.txt",
-        preferredScope: "major",
+        preferredUrl: "https://www.npmjs.com/package/next/v/16.2.9",
+        preferredScope: "package",
         versionSource: "declared-range",
       });
       expect(zod).toMatchObject({
@@ -141,8 +145,8 @@ describe("node-boost MCP server", () => {
       expect(drift.ok).toBe(false);
       expect(drift.checks).toContainEqual({
         id: "generated-with-drift",
-        status: "warn",
-        message: "generatedWith is 0.0.1, package is 0.1.0. Run node-boost update.",
+        status: "fail",
+          message: "generatedWith is 0.0.1, package is 0.4.0. Run node-boost update.",
       });
       expect(drift.checks).toContainEqual(expect.objectContaining({ id: "agent-files-present", status: "fail" }));
 
@@ -161,8 +165,8 @@ describe("node-boost MCP server", () => {
       const staleClient = await createClient(projectRoot);
       const stale = await callJsonTool<DoctorResult>(staleClient, "doctor");
 
-      expect(stale.ok).toBe(true);
-      expect(stale.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "warn" }));
+      expect(stale.ok).toBe(false);
+      expect(stale.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "fail" }));
     });
   });
 

@@ -30,7 +30,7 @@ export function inferredCommonArchitectures(stack: {
     architectures.push("modern-typescript");
   }
 
-  if (has("zod") || has("valibot")) {
+  if (has("typescript") || has("zod") || has("valibot")) {
     architectures.push("typed-contracts");
   }
 

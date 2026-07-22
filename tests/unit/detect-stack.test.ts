@@ -33,6 +33,14 @@ describe("detectStack", () => {
     expect(stack.packages["react-router"].major).toBe(7);
   });
 
+  it("detects Vite React without requiring a router", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-no-router"));
+
+    expect(stack.name).toBe("vite-react");
+    expect(stack.router).toBe("none");
+    expect(stack.packages["react-router"].version).toBeNull();
+  });
+
   it("extracts the minimal version from package ranges", () => {
     expect(extractVersionFromRange("^16.2.9")).toBe("16.2.9");
     expect(extractVersionFromRange("~7.1")).toBe("7.1.0");
@@ -102,6 +110,57 @@ describe("detectStack", () => {
 
       expect(stack.packages.next.major).toBe(16);
       expect(stack.capabilities).toEqual({ reactCompiler: false, nextCacheComponents: true });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores capability names in comments and unrelated strings", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-structural-capability-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { next: "^16.0.0", react: "^19.0.0" } }, null, 2),
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "next.config.ts"),
+        [
+          "// cacheComponents: true",
+          "const note = 'reactCompiler: true and babel-plugin-react-compiler';",
+          "export default { cacheComponents: false, reactCompiler: false, note };",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.capabilities).toEqual({ reactCompiler: false, nextCacheComponents: false });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("recognizes the React Compiler only in a structural Babel plugins entry", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-babel-capability-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { react: "^19.0.0", vite: "^6.0.0" } }, null, 2),
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "babel.config.js"),
+        "module.exports = { plugins: [['babel-plugin-react-compiler', { target: '19' }]] };\n",
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.capabilities.reactCompiler).toBe(true);
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

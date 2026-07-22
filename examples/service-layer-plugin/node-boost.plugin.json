@@ -1,0 +1,21 @@
+{
+  "apiVersion": 1,
+  "name": "@node-boost-example/service-layer-plugin",
+  "architectures": [
+    {
+      "slug": "service-layer",
+      "title": "Service layer",
+      "description": "Keep orchestration in an explicit application service boundary.",
+      "stacks": ["next", "vite-react"],
+      "resources": {
+        "guideline": "resources/service-layer/guideline.md",
+        "skill": "resources/service-layer/SKILL.md",
+        "variants": {
+          "strict": {
+            "guideline": "resources/service-layer/strict.md"
+          }
+        }
+      }
+    }
+  ]
+}

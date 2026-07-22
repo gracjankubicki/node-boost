@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 export async function listResourceFiles(rootDir: string, kind: "guidelines" | "skills"): Promise<string[]> {
   const baseDir = join(rootDir, "resources", "react", kind);
   const files = await walkMarkdownFiles(baseDir);
-  return files.map((file) => relative(baseDir, file)).sort((a, b) => a.localeCompare(b));
+  return files.map((file) => relative(baseDir, file).replaceAll("\\", "/")).sort((a, b) => a.localeCompare(b));
 }
 
 async function walkMarkdownFiles(dir: string): Promise<string[]> {

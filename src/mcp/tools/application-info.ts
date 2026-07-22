@@ -25,7 +25,8 @@ export interface ApplicationInfo {
   boost: {
     version: string;
     generatedWith: string;
-    architectures: Array<{ name: string; options: Record<string, unknown> }>;
+    plugins: Array<{ name: string; source: "dependency" }>;
+    architectures: Array<{ name: string; options: Record<string, unknown>; source: string }>;
   } | null;
   hint?: string;
 }
@@ -39,7 +40,7 @@ export async function applicationInfoTool(rootDir: string, boostVersion: string)
     packageManager: `${stack.packageManager.name}${stack.packageManager.version ? `@${stack.packageManager.version}` : ""}`,
     typescript: {
       version: stack.packages.typescript?.version ?? null,
-      strict: await readTypescriptStrict(rootDir),
+      strict: readTypescriptStrict(rootDir),
     },
     stack: {
       name: stack.name,
@@ -54,14 +55,21 @@ export async function applicationInfoTool(rootDir: string, boostVersion: string)
       ? {
           version: boostVersion,
           generatedWith: boostConfig.config.generatedWith,
+          plugins: (boostConfig.config.plugins ?? []).map((name) => ({ name, source: "dependency" as const })),
           architectures: boostConfig.architectures.map((architecture) => ({
             name: architecture.name,
             options: architecture.options,
+            source: architectureSource(architecture.name),
           })),
         }
       : null,
     ...(boostConfig.config ? {} : { hint: "run node-boost install" }),
   };
+}
+
+function architectureSource(name: string): string {
+  const separator = name.lastIndexOf(":");
+  return separator > 0 ? name.slice(0, separator) : "built-in";
 }
 
 function detectedPackages(packages: Record<string, PackageInfo>): Record<string, string> {

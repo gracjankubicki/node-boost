@@ -4,10 +4,15 @@ import { buildInstallOperations } from "../../install/orchestrator.js";
 import { resolveDefaultPackageRoot } from "../../install/project.js";
 import { detectStack } from "../../detect/stack.js";
 import { readBoostConfig } from "../project.js";
+import { generatedManifestPath, inspectGeneratedOwnership } from "../../install/generated-manifest.js";
+import { readTypeScriptConfig } from "../../config/typescript-config.js";
+import { loadNodeBoostPlugins } from "../../plugin/runtime.js";
+import type { NodeBoostConfig } from "../../config/schema.js";
 
 export type DoctorCheckId =
   | "config-present"
   | "config-valid"
+  | "plugins-valid"
   | "generated-with-drift"
   | "stack-detected"
   | "resources-fresh"
@@ -18,7 +23,7 @@ export type DoctorCheckId =
 
 export interface DoctorCheck {
   id: DoctorCheckId;
-  status: "pass" | "warn" | "fail";
+  status: "pass" | "warn" | "fail" | "skip";
   message: string;
   details?: string[];
 }
@@ -48,7 +53,7 @@ export async function doctorTool(rootDir: string, boostVersion: string): Promise
 
   checks.push({
     id: "generated-with-drift",
-    status: !boostConfig.config || boostConfig.config.generatedWith === boostVersion ? "pass" : "warn",
+    status: !boostConfig.config || boostConfig.config.generatedWith === boostVersion ? "pass" : "fail",
     message: !boostConfig.config
       ? "No generatedWith drift can be checked without a valid config."
       : boostConfig.config.generatedWith === boostVersion
@@ -63,11 +68,23 @@ export async function doctorTool(rootDir: string, boostVersion: string): Promise
   });
 
   if (!boostConfig.config) {
+    checks.push(skipCheck("plugins-valid", "Requires a valid node-boost.json."));
     checks.push(skipCheck("resources-fresh", "Requires a valid node-boost.json."));
     checks.push(skipCheck("agent-files-present", "Requires a valid node-boost.json."));
     checks.push(await overridesCheck(rootDir));
     checks.push(skipCheck("hooks-wired", "Requires a valid node-boost.json."));
-    checks.push(await lintStrictCheck(rootDir));
+    checks.push(lintStrictCheck(rootDir));
+    return withOk(checks);
+  }
+
+  const plugins = await pluginsValidCheck(rootDir, boostConfig.config);
+  checks.push(plugins);
+  if (plugins.status === "fail") {
+    checks.push(skipCheck("resources-fresh", "Requires valid configured plugins."));
+    checks.push(skipCheck("agent-files-present", "Requires valid configured plugins."));
+    checks.push(await overridesCheck(rootDir));
+    checks.push(skipCheck("hooks-wired", "Requires valid configured plugins."));
+    checks.push(lintStrictCheck(rootDir));
     return withOk(checks);
   }
 
@@ -83,45 +100,65 @@ export async function doctorTool(rootDir: string, boostVersion: string): Promise
   checks.push(await agentFilesPresentCheck(rootDir, expectedOperations));
   checks.push(await overridesCheck(rootDir));
   checks.push(await hooksWiredCheck(rootDir, boostConfig.config.features.hooks, expectedOperations));
-  checks.push(await lintStrictCheck(rootDir));
+  checks.push(lintStrictCheck(rootDir));
 
   return withOk(checks);
 }
 
+async function pluginsValidCheck(rootDir: string, config: NodeBoostConfig): Promise<DoctorCheck> {
+  try {
+    const plugins = await loadNodeBoostPlugins(rootDir, config.plugins ?? []);
+    return {
+      id: "plugins-valid",
+      status: "pass",
+      message: plugins.length === 0
+        ? "No content plugins configured."
+        : `${plugins.length} content plugin(s) loaded: ${plugins.map((plugin) => plugin.packageName).join(", ")}.`,
+      details: plugins.map((plugin) => `${plugin.packageName}: dependency`),
+    };
+  } catch (error) {
+    return {
+      id: "plugins-valid",
+      status: "fail",
+      message: error instanceof Error ? error.message : "Configured plugin validation failed.",
+    };
+  }
+}
+
 async function resourcesFreshCheck(rootDir: string, expectedOperations: Array<{ path: string; content: string }>): Promise<DoctorCheck> {
-  const stale = await changedExpectedFiles(rootDir, expectedOperations.filter((operation) => operation.path.startsWith(".ai/")));
+  const inspection = await inspectGeneratedOwnership(rootDir, expectedOperations);
+  const details = [
+    ...inspection.stale.map((path) => `stale: ${path}`),
+    ...inspection.modified.map((path) => `modified: ${path}`),
+    ...inspection.outdated.map((path) => `outdated: ${path}`),
+  ];
 
   return {
     id: "resources-fresh",
-    status: stale.length === 0 ? "pass" : "warn",
-    message: stale.length === 0 ? "Generated .ai resources match current node-boost output." : `${stale.length} generated .ai resource(s) differ. Run node-boost update.`,
+    status: details.length === 0 ? "pass" : "fail",
+    message: details.length === 0
+      ? "Generated resources match current node-boost output."
+      : `${details.length} generated resource issue(s) found. Run node-boost update and review conflicts.`,
+    details,
+  };
+}
+
+async function agentFilesPresentCheck(rootDir: string, expectedOperations: Array<{ path: string; content: string }>): Promise<DoctorCheck> {
+  const expected = expectedOperations
+    .filter((operation) => !operation.path.startsWith(".ai/") && operation.path !== "node-boost.json");
+  const stale = await changedExpectedFiles(rootDir, expected);
+
+  return {
+    id: "agent-files-present",
+    status: stale.length === 0 ? "pass" : "fail",
+    message: stale.length === 0
+      ? "Configured agent integrations match the desired state."
+      : `${stale.length} agent integration file(s) missing or stale. Run node-boost update.`,
     details: stale,
   };
 }
 
-async function agentFilesPresentCheck(rootDir: string, expectedOperations: Array<{ path: string }>): Promise<DoctorCheck> {
-  const expected = expectedOperations
-    .filter((operation) => !operation.path.startsWith(".ai/") && operation.path !== "node-boost.json")
-    .map((operation) => operation.path);
-  const missing = await missingFiles(rootDir, expected);
-
-  return {
-    id: "agent-files-present",
-    status: missing.length === 0 ? "pass" : "fail",
-    message: missing.length === 0 ? "Configured agent files are present." : `${missing.length} configured agent file(s) missing. Run node-boost update.`,
-    details: missing,
-  };
-}
-
 async function hooksWiredCheck(rootDir: string, hooksEnabled: boolean, expectedOperations: Array<{ path: string; content: string }>): Promise<DoctorCheck> {
-  if (!hooksEnabled) {
-    return {
-      id: "hooks-wired",
-      status: "pass",
-      message: "Hooks feature is disabled.",
-    };
-  }
-
   const hookOperations = expectedOperations.filter((operation) =>
     operation.path === ".claude/settings.json" || operation.path === ".codex/hooks.json" || operation.path === ".cursor/hooks.json",
   );
@@ -130,24 +167,29 @@ async function hooksWiredCheck(rootDir: string, hooksEnabled: boolean, expectedO
   return {
     id: "hooks-wired",
     status: stale.length === 0 ? "pass" : "fail",
-    message: stale.length === 0 ? "Configured hook entries are wired." : `${stale.length} hook config file(s) missing or stale. Run node-boost update.`,
+    message: stale.length === 0
+      ? hooksEnabled ? "Configured hook entries are wired." : "Hooks feature is disabled and no stale node-boost hook remains."
+      : `${stale.length} hook config file(s) missing or stale. Run node-boost update.`,
     details: stale,
   };
 }
 
 async function overridesCheck(rootDir: string): Promise<DoctorCheck> {
-  const overrides = await listFiles(join(rootDir, ".node-boost"));
+  const overridesRoot = join(rootDir, ".node-boost");
+  const overrides = (await listFiles(overridesRoot)).filter((file) =>
+    relative(rootDir, file).replaceAll("\\", "/") !== generatedManifestPath,
+  );
 
   return {
     id: "overrides-detected",
     status: "pass",
     message: overrides.length === 0 ? "No .node-boost overrides detected." : `${overrides.length} .node-boost override(s) active.`,
-    details: overrides.map((file) => relative(join(rootDir, ".node-boost"), file).replaceAll("\\", "/")),
+    details: overrides.map((file) => relative(overridesRoot, file).replaceAll("\\", "/")),
   };
 }
 
-async function lintStrictCheck(rootDir: string): Promise<DoctorCheck> {
-  const strict = await tsconfigStrict(rootDir);
+function lintStrictCheck(rootDir: string): DoctorCheck {
+  const strict = readTypeScriptConfig(rootDir).strict;
 
   return {
     id: "lint-strict",
@@ -165,11 +207,6 @@ async function changedExpectedFiles(rootDir: string, expectedOperations: Array<{
   );
 
   return changed.filter((path): path is string => path !== null).sort((a, b) => a.localeCompare(b));
-}
-
-async function missingFiles(rootDir: string, paths: string[]): Promise<string[]> {
-  const missing = await Promise.all(paths.map(async (path) => ((await readOptional(join(rootDir, path))) === null ? path : null)));
-  return missing.filter((path): path is string => path !== null).sort((a, b) => a.localeCompare(b));
 }
 
 async function listFiles(dir: string): Promise<string[]> {
@@ -191,34 +228,6 @@ async function listFiles(dir: string): Promise<string[]> {
   }
 }
 
-async function tsconfigStrict(rootDir: string): Promise<boolean | null> {
-  const visited = new Set<string>();
-  return readStrictFromTsconfig(join(rootDir, "tsconfig.json"), visited);
-}
-
-async function readStrictFromTsconfig(path: string, visited: Set<string>): Promise<boolean | null> {
-  if (visited.has(path)) {
-    return null;
-  }
-
-  visited.add(path);
-  const raw = await readOptional(path);
-  if (!raw) {
-    return null;
-  }
-
-  const parsed = JSON.parse(stripJsonComments(raw)) as { extends?: string; compilerOptions?: { strict?: boolean } };
-  if (typeof parsed.compilerOptions?.strict === "boolean") {
-    return parsed.compilerOptions.strict;
-  }
-
-  if (parsed.extends?.startsWith(".")) {
-    return readStrictFromTsconfig(join(path, "..", parsed.extends), visited);
-  }
-
-  return null;
-}
-
 async function readOptional(path: string): Promise<string | null> {
   try {
     return await readFile(path, "utf8");
@@ -227,12 +236,8 @@ async function readOptional(path: string): Promise<string | null> {
   }
 }
 
-function stripJsonComments(value: string): string {
-  return value.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-}
-
 function skipCheck(id: DoctorCheckId, message: string): DoctorCheck {
-  return { id, status: "warn", message };
+  return { id, status: "skip", message };
 }
 
 function withOk(checks: DoctorCheck[]): DoctorResult {

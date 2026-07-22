@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
-import type { AuditRule } from "../rule.js";
-import { finding } from "./helpers.js";
+import { Node, SyntaxKind, type Expression } from "ts-morph";
+import type { AuditFile, AuditRule } from "../rule.js";
+import { finding, isNextEntryPath } from "./helpers.js";
 
 export const errorLoadingBoundaryRules: AuditRule[] = [
   {
@@ -12,7 +13,7 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
     kind: "project",
     check(context) {
       return context.files.flatMap((file) => {
-        if (!/(^|\/)app\/.+\/page\.tsx?$/.test(file.path) || !fetchesRemoteData(file.content)) {
+        if (!isNextEntryPath(file.path, "page") || !hasSuspendingCall(file)) {
           return [];
         }
 
@@ -24,29 +25,49 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
   },
 ];
 
-function fetchesRemoteData(content: string): boolean {
-  return (
-    /\b(?:fetch|axios\.(?:get|post|put|patch|delete)|ky(?:\.[a-z]+)?)\s*\(/.test(content) ||
-    /from\s+["'][^"']*(?:\/api\/|\/server\/|\/data\/)[^"']*["']/.test(content)
+function hasSuspendingCall(file: AuditFile): boolean {
+  if (!file.sourceFile) {
+    return false;
+  }
+
+  return file.sourceFile.getDescendantsOfKind(SyntaxKind.AwaitExpression).some((awaitExpression) =>
+    Node.isCallExpression(unwrapExpression(awaitExpression.getExpression())),
   );
+}
+
+function unwrapExpression(expression: Expression): Expression {
+  let current = expression;
+  while (
+    Node.isParenthesizedExpression(current)
+    || Node.isAsExpression(current)
+    || Node.isTypeAssertion(current)
+    || Node.isNonNullExpression(current)
+    || Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
 }
 
 function hasBoundaryInBranch(pagePath: string, allPaths: Set<string>): boolean {
   let current = dirname(pagePath);
 
-  while (current.includes("/app/") || current.endsWith("/app") || current === "app" || current === "src/app") {
+  while (isAppDirectory(current)) {
     for (const name of ["loading.tsx", "loading.ts", "loading.jsx", "loading.js", "error.tsx", "error.ts", "error.jsx", "error.js"]) {
       if (allPaths.has(`${current}/${name}`)) {
         return true;
       }
     }
 
-    if (current.endsWith("/app") || current === "app" || current === "src/app") {
+    if (current === "app" || current === "src/app") {
       break;
     }
-
     current = dirname(current);
   }
 
   return false;
+}
+
+function isAppDirectory(path: string): boolean {
+  return path === "app" || path === "src/app" || path.startsWith("app/") || path.startsWith("src/app/");
 }

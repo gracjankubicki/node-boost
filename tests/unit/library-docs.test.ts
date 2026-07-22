@@ -17,10 +17,12 @@ describe("library documentation", () => {
 
     expect(rendered).toMatch(/^# Project library documentation\n\n> /);
     expect(rendered).toContain("## Version-matched documentation");
-    expect(rendered).toContain("[next 16.2.9](https://nextjs.org/docs/llms.txt)");
+    expect(rendered).toContain("[next 16.2.9](https://www.npmjs.com/package/next/v/16.2.9)");
     expect(rendered).toContain("[zod 4.0.0](https://zod.dev/llms.txt)");
     expect(rendered).toContain("inferred from declared range ^16.2.9");
-    expect(rendered).not.toContain("## Upstream AI-readable indexes (secondary)");
+    expect(rendered).toContain("[next current docs](https://nextjs.org/docs)");
+    expect(rendered).toContain("[next upstream llms.txt](https://nextjs.org/docs/llms.txt)");
+    expect(rendered).toContain("## Upstream AI-readable indexes (secondary)");
     expect(rendered).not.toContain("[swr");
   });
 

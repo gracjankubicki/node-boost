@@ -199,25 +199,25 @@ function resolveEntry(pkg: PackageInfo & { version: string }): LibraryDocumentat
   };
 }
 
-function nextDocs(pkg: PackageInfo): { url: string; scope: "major" } | null {
+function nextDocs(pkg: PackageInfo): { url: string; scope: "major" | "current" } | null {
   if (pkg.major === 14 || pkg.major === 15) {
     return { url: `https://nextjs.org/docs/${pkg.major}`, scope: "major" };
   }
 
   if (pkg.major === 16) {
-    return { url: "https://nextjs.org/docs", scope: "major" };
+    return { url: "https://nextjs.org/docs", scope: "current" };
   }
 
   return null;
 }
 
-function nextLlms(pkg: PackageInfo): { url: string; scope: "major" } | null {
+function nextLlms(pkg: PackageInfo): { url: string; scope: "major" | "current" } | null {
   if (pkg.major === 14 || pkg.major === 15) {
     return { url: `https://nextjs.org/docs/${pkg.major}/llms.txt`, scope: "major" };
   }
 
   if (pkg.major === 16) {
-    return { url: "https://nextjs.org/docs/llms.txt", scope: "major" };
+    return { url: "https://nextjs.org/docs/llms.txt", scope: "current" };
   }
 
   return null;

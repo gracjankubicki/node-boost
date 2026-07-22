@@ -1,5 +1,24 @@
-import type { AuditRule } from "../rule.js";
-import { finding, hasUseClientDirective, lineOf } from "./helpers.js";
+import { Node, SyntaxKind } from "ts-morph";
+import type { AuditFile, AuditRule } from "../rule.js";
+import { callTarget, finding, isNextEntryPath, useClientDirectiveLine } from "./helpers.js";
+
+const clientOnlyCalls = new Set([
+  "createContext",
+  "useCallback",
+  "useContext",
+  "useDeferredValue",
+  "useEffect",
+  "useId",
+  "useImperativeHandle",
+  "useLayoutEffect",
+  "useMemo",
+  "useReducer",
+  "useRef",
+  "useState",
+  "useSyncExternalStore",
+  "useTransition",
+]);
+const browserGlobals = new Set(["document", "history", "localStorage", "navigator", "sessionStorage", "window"]);
 
 export const serverFirstComponentRules: AuditRule[] = [
   {
@@ -8,14 +27,13 @@ export const serverFirstComponentRules: AuditRule[] = [
     architecture: "server-first-components",
     defaultSeverity: "err",
     stacks: ["next"],
-    kind: "line",
+    kind: "ast",
     check(context) {
       return context.files.flatMap((file) => {
-        if (!hasUseClientDirective(file) || !/(^|\/)(page|layout)\.tsx?$/.test(file.path)) {
-          return [];
-        }
-
-        return [finding(file, "NB-ARCH-003", "use-client-in-entry", lineOf(file.content, /['"]use client['"]/))];
+        const line = useClientDirectiveLine(file);
+        return line !== null && (isNextEntryPath(file.path, "page") || isNextEntryPath(file.path, "layout"))
+          ? [finding(file, "NB-ARCH-003", "use-client-in-entry", line)]
+          : [];
       });
     },
   },
@@ -25,21 +43,52 @@ export const serverFirstComponentRules: AuditRule[] = [
     architecture: "server-first-components",
     defaultSeverity: "warn",
     stacks: ["next"],
-    kind: "line",
+    kind: "ast",
     check(context) {
       return context.files.flatMap((file) => {
-        if (!hasUseClientDirective(file)) {
+        const line = useClientDirectiveLine(file);
+        if (line === null) {
           return [];
         }
 
-        const withoutDirective = file.lines.filter((line) => !line.includes("use client")).join("\n");
-        const needsClient =
-          /\buse[A-Z]\w*\s*\(/.test(withoutDirective) ||
-          /\bon[A-Z]\w*\s*=/.test(withoutDirective) ||
-          /\b(window|document|navigator|localStorage|sessionStorage)\b/.test(withoutDirective) ||
-          /\b(?:Resize|Intersection|Mutation)Observer\b/.test(withoutDirective);
-        return needsClient ? [] : [finding(file, "NB-ARCH-004", "needless-use-client", lineOf(file.content, /['"]use client['"]/))];
+        return needsClientRuntime(file) ? [] : [finding(file, "NB-ARCH-004", "needless-use-client", line)];
       });
     },
   },
 ];
+
+function needsClientRuntime(file: AuditFile): boolean {
+  if (!file.sourceFile) {
+    return false;
+  }
+
+  const hasClientCall = file.sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+    const target = callTarget(call.getExpression());
+    const name = target?.split(".").at(-1);
+    return name !== undefined && (clientOnlyCalls.has(name) || isHookName(name));
+  });
+  if (hasClientCall) {
+    return true;
+  }
+
+  const hasEventHandler = file.sourceFile.getDescendantsOfKind(SyntaxKind.JsxAttribute).some((attribute) => {
+    const name = attribute.getNameNode().getText();
+    return name.startsWith("on") && isUppercaseLetter(name[2]);
+  });
+  if (hasEventHandler) {
+    return true;
+  }
+
+  return file.sourceFile.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) => {
+    const parent = identifier.getParent();
+    return browserGlobals.has(identifier.getText()) && !Node.isImportSpecifier(parent);
+  });
+}
+
+function isHookName(name: string): boolean {
+  return name.startsWith("use") && isUppercaseLetter(name[3]);
+}
+
+function isUppercaseLetter(character: string | undefined): boolean {
+  return character !== undefined && character >= "A" && character <= "Z";
+}

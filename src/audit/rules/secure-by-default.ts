@@ -1,6 +1,6 @@
 import { Node, SyntaxKind, type Expression, type SourceFile } from "ts-morph";
 import type { AuditFile, AuditFinding, AuditRule } from "../rule.js";
-import { finding } from "./helpers.js";
+import { callTarget, environmentAccesses, finding } from "./helpers.js";
 
 const htmlParserPackages = new Set(["html-react-parser", "react-html-parser"]);
 const objectSanitizerPackages = new Set(["dompurify", "isomorphic-dompurify"]);
@@ -11,6 +11,7 @@ interface HtmlBindings {
   parserObjects: Set<string>;
   sanitizerFunctions: Set<string>;
   sanitizerObjects: Set<string>;
+  configuredSanitizers: Set<string>;
 }
 
 export const secureByDefaultRules: AuditRule[] = [
@@ -22,7 +23,8 @@ export const secureByDefaultRules: AuditRule[] = [
     stacks: ["next", "vite-react"],
     kind: "ast",
     check(context) {
-      return context.files.flatMap(findUnsafeHtmlSinks);
+      const configuredSanitizers = sanitizerTargets(context.ruleOptions);
+      return context.files.flatMap((file) => findUnsafeHtmlSinks(file, configuredSanitizers));
     },
   },
   {
@@ -31,27 +33,22 @@ export const secureByDefaultRules: AuditRule[] = [
     architecture: "secure-by-default",
     defaultSeverity: "warn",
     stacks: ["next", "vite-react"],
-    kind: "line",
+    kind: "ast",
     check(context) {
-      return context.files.flatMap((file) =>
-        file.lines.flatMap((line, index) => {
-          const names = [...line.matchAll(/\b((?:NEXT_PUBLIC|VITE)_[A-Z0-9_]+)/g)].map((match) => match[1] ?? "");
-          return names
-            .filter((name) => /(SECRET|TOKEN|PRIVATE|PASSWORD|_KEY$)/.test(name))
-            .map((name) => finding(file, "NB-ARCH-012", "public-env-secret-name", index + 1, name));
-        }),
-      );
+      return context.files.flatMap((file) => environmentAccesses(file)
+        .filter((access) => access.public && looksSecret(access.name))
+        .map((access) => finding(file, "NB-ARCH-012", "public-env-secret-name", access.line, access.name)));
     },
   },
 ];
 
-function findUnsafeHtmlSinks(file: AuditFile): AuditFinding[] {
+function findUnsafeHtmlSinks(file: AuditFile, configuredSanitizers: Set<string>): AuditFinding[] {
   const sourceFile = file.sourceFile;
   if (!sourceFile) {
     return [];
   }
 
-  const bindings = collectHtmlBindings(sourceFile);
+  const bindings = collectHtmlBindings(sourceFile, configuredSanitizers);
   const findings: AuditFinding[] = [];
   const reportedStarts = new Set<number>();
 
@@ -77,16 +74,21 @@ function findUnsafeHtmlSinks(file: AuditFile): AuditFinding[] {
       continue;
     }
 
-    const value = rawHtmlValue(property.getInitializer(), sourceFile);
-    reportIfUnsafe(file, property, value, sourceFile, bindings, findings, reportedStarts);
+    reportIfUnsafe(
+      file,
+      property,
+      rawHtmlValue(property.getInitializer(), sourceFile),
+      sourceFile,
+      bindings,
+      findings,
+      reportedStarts,
+    );
   }
 
   for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isHtmlParserCall(call.getExpression(), bindings)) {
-      continue;
+    if (isHtmlParserCall(call.getExpression(), bindings)) {
+      reportIfUnsafe(file, call, call.getArguments()[0], sourceFile, bindings, findings, reportedStarts);
     }
-
-    reportIfUnsafe(file, call, call.getArguments()[0], sourceFile, bindings, findings, reportedStarts);
   }
 
   return findings;
@@ -109,12 +111,13 @@ function reportIfUnsafe(
   findings.push(finding(file, "NB-ARCH-011", "unsanitized-html", node.getStartLineNumber()));
 }
 
-function collectHtmlBindings(sourceFile: SourceFile): HtmlBindings {
+function collectHtmlBindings(sourceFile: SourceFile, configuredSanitizers: Set<string>): HtmlBindings {
   const bindings: HtmlBindings = {
     parserFunctions: new Set(),
     parserObjects: new Set(),
     sanitizerFunctions: new Set(),
     sanitizerObjects: new Set(),
+    configuredSanitizers,
   };
 
   for (const declaration of sourceFile.getImportDeclarations()) {
@@ -141,14 +144,12 @@ function collectHtmlBindings(sourceFile: SourceFile): HtmlBindings {
       const importedName = namedImport.getName();
       const localName = namedImport.getAliasNode()?.getText() ?? importedName;
 
-      if (htmlParserPackages.has(moduleName) && importedName === "parse") {
+      if (htmlParserPackages.has(moduleName) && (importedName === "parse" || importedName === "default")) {
         bindings.parserFunctions.add(localName);
       }
-
       if (objectSanitizerPackages.has(moduleName) && importedName === "sanitize") {
         bindings.sanitizerFunctions.add(localName);
       }
-
       if (callableSanitizerPackages.has(moduleName)) {
         bindings.sanitizerFunctions.add(localName);
       }
@@ -169,17 +170,24 @@ function rawHtmlValue(expression: Expression | undefined, sourceFile: SourceFile
   }
 
   const property = resolved.getProperty("__html");
-  return property && Node.isPropertyAssignment(property) ? property.getInitializer() : undefined;
+  if (property && Node.isPropertyAssignment(property)) {
+    return property.getInitializer();
+  }
+  if (property && Node.isShorthandPropertyAssignment(property)) {
+    return sourceFile.getVariableDeclaration(property.getName())?.getInitializer();
+  }
+  return undefined;
 }
 
 function resolveExpression(expression: Expression, sourceFile: SourceFile): Expression | undefined {
   const current = unwrapExpression(expression);
-
   if (!Node.isIdentifier(current)) {
     return current;
   }
 
-  return sourceFile.getVariableDeclaration(current.getText())?.getInitializer() ?? current;
+  return current.getSymbol()?.getDeclarations().find(Node.isVariableDeclaration)?.getInitializer()
+    ?? sourceFile.getVariableDeclaration(current.getText())?.getInitializer()
+    ?? current;
 }
 
 function isSafeHtmlExpression(
@@ -193,15 +201,12 @@ function isSafeHtmlExpression(
   }
 
   const expression = unwrapExpression(value);
-
   if (Node.isStringLiteral(expression) || Node.isNoSubstitutionTemplateLiteral(expression)) {
     return true;
   }
-
   if (Node.isCallExpression(expression)) {
     return isSanitizerCall(expression.getExpression(), bindings);
   }
-
   if (!Node.isIdentifier(expression)) {
     return false;
   }
@@ -210,25 +215,24 @@ function isSafeHtmlExpression(
   if (visited.has(name)) {
     return false;
   }
-
   visited.add(name);
-  const initializer = sourceFile.getVariableDeclaration(name)?.getInitializer();
-  return initializer ? isSafeHtmlExpression(initializer, sourceFile, bindings, visited) : false;
+  const initializer = resolveExpression(expression, sourceFile);
+  return initializer && initializer !== expression
+    ? isSafeHtmlExpression(initializer, sourceFile, bindings, visited)
+    : false;
 }
 
 function unwrapExpression(expression: Expression): Expression {
   let current = expression;
-
   while (
-    Node.isParenthesizedExpression(current) ||
-    Node.isAsExpression(current) ||
-    Node.isTypeAssertion(current) ||
-    Node.isNonNullExpression(current) ||
-    Node.isSatisfiesExpression(current)
+    Node.isParenthesizedExpression(current)
+    || Node.isAsExpression(current)
+    || Node.isTypeAssertion(current)
+    || Node.isNonNullExpression(current)
+    || Node.isSatisfiesExpression(current)
   ) {
     current = current.getExpression();
   }
-
   return current;
 }
 
@@ -236,22 +240,37 @@ function isHtmlParserCall(expression: Expression, bindings: HtmlBindings): boole
   if (Node.isIdentifier(expression)) {
     return bindings.parserFunctions.has(expression.getText());
   }
-
-  return (
-    Node.isPropertyAccessExpression(expression) &&
-    bindings.parserObjects.has(expression.getExpression().getText()) &&
-    expression.getName() === "default"
-  );
+  return Node.isPropertyAccessExpression(expression)
+    && bindings.parserObjects.has(expression.getExpression().getText())
+    && (expression.getName() === "default" || expression.getName() === "parse");
 }
 
 function isSanitizerCall(expression: Expression, bindings: HtmlBindings): boolean {
+  const target = callTarget(expression);
+  if (target && bindings.configuredSanitizers.has(target)) {
+    return true;
+  }
   if (Node.isIdentifier(expression)) {
     return bindings.sanitizerFunctions.has(expression.getText());
   }
+  return Node.isPropertyAccessExpression(expression)
+    && bindings.sanitizerObjects.has(expression.getExpression().getText())
+    && expression.getName() === "sanitize";
+}
 
-  return (
-    Node.isPropertyAccessExpression(expression) &&
-    bindings.sanitizerObjects.has(expression.getExpression().getText()) &&
-    expression.getName() === "sanitize"
+function sanitizerTargets(options: Record<string, unknown>): Set<string> {
+  const configured = options.sanitizers;
+  return new Set(
+    Array.isArray(configured)
+      ? configured.filter((value): value is string => typeof value === "string" && value.length > 0)
+      : [],
   );
+}
+
+function looksSecret(name: string): boolean {
+  return name.includes("SECRET")
+    || name.includes("TOKEN")
+    || name.includes("PRIVATE")
+    || name.includes("PASSWORD")
+    || name.endsWith("_KEY");
 }

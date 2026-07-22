@@ -1,0 +1,17 @@
+{
+  "name": "@node-boost-example/service-layer-plugin",
+  "version": "0.1.0",
+  "description": "Example content-only architecture plugin for node-boost.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./node-boost.plugin.json": "./node-boost.plugin.json"
+  },
+  "files": [
+    "node-boost.plugin.json",
+    "resources"
+  ],
+  "peerDependencies": {
+    "@node-boost/node-boost": "^0.4.0"
+  }
+}

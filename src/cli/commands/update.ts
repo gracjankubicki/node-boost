@@ -13,9 +13,10 @@ export const updateCommand = defineCommand({
         summary[operation.status] += 1;
         return summary;
       },
-      { created: 0, updated: 0, skipped: 0 },
+      { created: 0, updated: 0, skipped: 0, deleted: 0, conflict: 0 },
     );
 
-    console.log(`node-boost update: created ${counts.created}, updated ${counts.updated}, skipped ${counts.skipped}`);
+    console.log(`node-boost update: created ${counts.created}, updated ${counts.updated}, deleted ${counts.deleted}, conflicts ${counts.conflict}, skipped ${counts.skipped}`);
+    process.exitCode = counts.conflict > 0 ? 1 : 0;
   },
 });

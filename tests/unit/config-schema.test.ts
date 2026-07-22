@@ -74,6 +74,82 @@ describe("nodeBoostConfigSchema", () => {
     ]);
   });
 
+  it("parses explicit content plugins and namespaced architecture variants", () => {
+    const config = parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "vite-react",
+      plugins: ["@acme/node-boost-plugin"],
+      architectures: [
+        { name: "@acme/node-boost-plugin:service-layer", variant: "strict" },
+      ],
+    });
+
+    expect(normalizeArchitectures(config)).toEqual([
+      { name: "@acme/node-boost-plugin:service-layer", options: { variant: "strict" } },
+    ]);
+  });
+
+  it("requires plugin architectures to reference a unique configured package", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      plugins: ["@acme/plugin", "@acme/plugin"],
+      architectures: ["@other/plugin:service-layer"],
+    })).toThrow();
+  });
+
+  it("rejects unknown audit rule identifiers instead of silently ignoring them", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: { "NB-ARCH-015": "err" },
+        ruleOptions: {},
+      },
+    })).toThrow("Unknown audit rule NB-ARCH-015");
+  });
+
+  it("rejects options for unknown audit rules", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: {},
+        ruleOptions: { "NB-ARCH-999": {} },
+      },
+    })).toThrow("Unknown audit rule NB-ARCH-999");
+  });
+
+  it("rejects unsupported and mistyped options for known audit rules", () => {
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: {},
+        ruleOptions: { "NB-ARCH-005": { dataLayerGlob: ["src/api/**"] } },
+      },
+    })).toThrow("Unrecognized key");
+
+    expect(() => parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.2.0",
+      stack: "next",
+      audit: {
+        exclude: [],
+        rules: {},
+        ruleOptions: { "NB-ARCH-011": { sanitizers: "DOMPurify.sanitize" } },
+      },
+    })).toThrow();
+  });
+
   it("rejects invalid architecture variants", () => {
     expect(() =>
       parseNodeBoostConfig({
@@ -111,5 +187,15 @@ describe("nodeBoostConfigSchema", () => {
         stack: "rails",
       }),
     ).toThrow();
+
+    expect(() =>
+      parseNodeBoostConfig({
+        version: 1,
+        generatedWith: "0.1.0",
+        stack: "next",
+        agents: ["codex"],
+        hookAgents: ["cursor"],
+      }),
+    ).toThrow("must also be present in agents");
   });
 });

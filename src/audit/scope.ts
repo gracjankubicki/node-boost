@@ -1,14 +1,16 @@
 import { execFile } from "node:child_process";
 import { realpath, readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { extname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import picomatch from "picomatch";
 import type { NodeBoostConfig } from "../config/schema.js";
+import { splitTextLines } from "./rules/helpers.js";
 import type { AuditFinding, AuditScopeResult } from "./rule.js";
 
 const execFileAsync = promisify(execFile);
-const sourceFilePattern = /\.(tsx?|jsx?)$/;
-const defaultExcludes = ["node_modules/**", "dist/**", ".next/**", "coverage/**"];
+const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]);
+const excludedDirectoryNames = new Set(["node_modules", "dist", ".next", "coverage"]);
+const defaultExcludes = [...excludedDirectoryNames].flatMap((directory) => [`${directory}/**`, `**/${directory}/**`]);
 
 export interface ResolveScopeOptions {
   rootDir: string;
@@ -22,10 +24,14 @@ export async function resolveAuditScope(options: ResolveScopeOptions): Promise<A
   const warnings: AuditFinding[] = [];
   const rawFiles = await resolveRawFiles(options, warnings);
   const files = filterSourceFiles(rawFiles, options.config.audit.exclude);
+  const allPaths = options.mode === "all"
+    ? files
+    : filterSourceFiles(await walkFiles(options.rootDir), options.config.audit.exclude);
 
   return {
     mode: options.mode,
     files,
+    allPaths,
     warnings,
   };
 }
@@ -43,7 +49,7 @@ async function resolveRawFiles(options: ResolveScopeOptions, warnings: AuditFind
     try {
       const gitRoot = await findGitRoot(options.rootDir);
       const mergeBase = (await execGit(gitRoot, ["merge-base", options.base ?? "main", "HEAD"])).trim();
-      const diff = await execGit(gitRoot, ["diff", "--name-only", mergeBase, "HEAD"]);
+      const diff = await execGit(gitRoot, ["diff", "--name-only", "--diff-filter=ACMR", mergeBase, "HEAD"]);
       return gitPathsToProjectRelative(gitRoot, options.rootDir, splitLines(diff));
     } catch {
       warnings.push(metaWarning("NB-META-004", "git-base-fallback-all"));
@@ -53,7 +59,7 @@ async function resolveRawFiles(options: ResolveScopeOptions, warnings: AuditFind
 
   try {
     const gitRoot = await findGitRoot(options.rootDir);
-    const tracked = await execGit(gitRoot, ["diff", "--name-only", "HEAD"]);
+    const tracked = await execGit(gitRoot, ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]);
     const untracked = await execGit(gitRoot, ["ls-files", "--others", "--exclude-standard"]);
     return gitPathsToProjectRelative(gitRoot, options.rootDir, [...splitLines(tracked), ...splitLines(untracked)]);
   } catch {
@@ -65,7 +71,7 @@ async function resolveRawFiles(options: ResolveScopeOptions, warnings: AuditFind
 function filterSourceFiles(files: string[], configuredExcludes: string[]): string[] {
   const excludes = picomatch([...defaultExcludes, ...configuredExcludes]);
   return [...new Set(files.map(toPosix))]
-    .filter((file) => sourceFilePattern.test(file))
+    .filter((file) => sourceExtensions.has(extname(file)))
     .filter((file) => !excludes(file))
     .sort((a, b) => a.localeCompare(b));
 }
@@ -78,7 +84,7 @@ async function walkFiles(rootDir: string, dir = rootDir): Promise<string[]> {
       const rel = toPosix(relative(rootDir, absolutePath));
 
       if (entry.isDirectory()) {
-        if (defaultExcludes.some((pattern) => picomatch.isMatch(`${rel}/`, pattern))) {
+        if (excludedDirectoryNames.has(entry.name)) {
           return [];
         }
 
@@ -113,11 +119,14 @@ async function gitPathsToProjectRelative(gitRootInput: string, rootDir: string, 
   return files
     .map(toPosix)
     .filter((file) => file === projectPrefix || file.startsWith(`${projectPrefix}/`))
-    .map((file) => file.slice(projectPrefix.length).replace(/^\//, ""));
+    .map((file) => {
+      const relativePath = file.slice(projectPrefix.length);
+      return relativePath.startsWith("/") ? relativePath.slice(1) : relativePath;
+    });
 }
 
 function splitLines(value: string): string[] {
-  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return splitTextLines(value).map((line) => line.trim()).filter(Boolean);
 }
 
 function toPosix(path: string): string {

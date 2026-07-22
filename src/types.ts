@@ -61,13 +61,15 @@ export type FeatureModulesBoundary = "public-api" | "forbid";
 
 export type ArchitectureConfigEntry =
   | ArchitectureSlug
+  | `${string}:${string}`
   | { name: "feature-modules"; boundary?: FeatureModulesBoundary }
   | {
       name: Exclude<ArchitectureSlug, "feature-modules">;
-    };
+    }
+  | { name: `${string}:${string}`; variant?: string };
 
 export interface NormalizedArchitecture {
-  name: ArchitectureSlug;
+  name: string;
   options: Record<string, unknown>;
 }
 
@@ -85,6 +87,7 @@ export interface ResourceSelection {
   outputPath: string;
   packageName?: string;
   packageMajor?: number;
+  pluginPackage?: string;
 }
 
 export interface AgentCapabilities {

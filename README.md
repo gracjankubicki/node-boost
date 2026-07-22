@@ -1,6 +1,6 @@
 # node-boost
 
-node-boost is Boost for the Node ecosystem: a CLI and MCP guidance layer that installs project-specific AI instructions, agent skills, audit rules, and guard hooks. v0.1 targets React apps, with first-class support for Next.js and Vite React projects.
+node-boost is Boost for the Node ecosystem: a CLI and MCP guidance layer that installs project-specific AI instructions, agent skills, audit rules, and guard hooks. It targets React apps, with first-class support for Next.js and Vite React projects.
 
 No telemetry. node-boost reads your local project, writes local files, and does not phone home.
 
@@ -13,7 +13,13 @@ npx node-boost install
 
 The npm package is published as `@node-boost/node-boost`; the installed CLI binary is `node-boost`.
 
-The installer detects your stack, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, generates `.ai/docs/llms.txt`, and configures selected agents:
+Content-only extensions publish a versioned `node-boost.plugin.json` manifest. node-boost
+resolves and validates that manifest without importing the plugin package entrypoint. The
+intentionally small `@node-boost/node-boost/plugin` subpath remains available to plugin
+authoring tools for validation and TypeScript types; installer, MCP, and audit internals are
+not exposed.
+
+The installer detects your stack and capabilities, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, generates `.ai/docs/llms.txt`, and configures selected agents:
 
 - Claude Code: `CLAUDE.md`, `.claude/skills/**`, `.mcp.json`, optional `.claude/settings.json` hooks.
 - Codex: `AGENTS.md`, `.agents/skills/**`, `.codex/config.toml`, optional `.codex/hooks.json`.
@@ -27,7 +33,7 @@ The installer detects your stack, writes `node-boost.json`, composes `.ai/guidel
 | `node-boost update` | Regenerate from `node-boost.json` without prompts. |
 | `node-boost doctor` | Check config, generated resources, agent files, hooks, overrides, and TS strictness. |
 | `node-boost audit` | Scan source files against enabled architecture rules. |
-| `node-boost guard` | Run `audit --changed --agent` as a hard CI/agent gate. |
+| `node-boost guard` | Run audit as a hard CI/agent gate; supports `--changed`, `--base`, and explicit paths. |
 | `node-boost explain NB-ARCH-005` | Explain a finding and link it back to the generated guideline. |
 | `node-boost mcp` | Start the MCP server over stdio. |
 
@@ -42,7 +48,7 @@ npx node-boost doctor --agent
 
 | Tool | Purpose |
 | --- | --- |
-| `application_info` | Return detected stack, package manager, packages, routes, and node-boost config summary. |
+| `application_info` | Return detected stack, capabilities, package manager, packages, routes, and node-boost config summary. |
 | `library_docs` | Return version-aware official documentation routes and exact package references. |
 | `list_routes` | List Next app routes, including route handlers and parallel slots. |
 | `doctor` | Run the same full checks as `node-boost doctor`. |
@@ -51,14 +57,14 @@ npx node-boost doctor --agent
 
 ## Library Documentation
 
-`install` and `update` generate `.ai/docs/llms.txt` from the detected dependency versions. Agents are instructed to use its version-matched routes before current-only documentation.
+`install` and `update` generate `.ai/docs/llms.txt` from detected dependency versions. Agents are instructed to prefer its version-matched routes over current-only upstream documentation.
 
 The routing policy is conservative:
 
 - Prefer an official exact- or major-version archive when one is available.
 - Otherwise use the exact npm package version as the primary reference and list current upstream docs as secondary.
-- Keep upstream `llms.txt` files as secondary when they describe only the current release.
-- When `node_modules` is unavailable, label versions as inferred from declared ranges. Install dependencies and run `node-boost update` to pin the resolved versions.
+- Keep an upstream `llms.txt` as secondary when it describes only the current release.
+- When `node_modules` is unavailable, label versions as inferred from declared ranges. Install dependencies and run `node-boost update` to pin resolved versions.
 
 ## Architecture Patterns
 
@@ -106,6 +112,12 @@ When `features.hooks` is enabled, node-boost wires `guard --hook <agent>` into e
 
 The hook audits changed files. Error findings block or continue the agent in that agent's native protocol. Disable hooks by setting:
 
+Hook payloads are validated against each agent's documented Stop protocol. Claude Code uses `stop_hook_active` and Cursor uses `loop_count` to prevent continuation loops; Codex uses `continue` and `stopReason`. The payload working directory selects the audited project only after absolute-directory validation.
+
+By default, enabling `features.hooks` wires hooks for every configured agent. Set `hookAgents` to a subset such as `["codex"]` to enable blocking hooks only for those agents; an explicit empty list enables none.
+
+Protocol references: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude Code hooks](https://code.claude.com/docs/en/hooks), and [Cursor hooks](https://cursor.com/docs/hooks).
+
 ```json
 {
   "features": {
@@ -126,10 +138,12 @@ npx node-boost update
 
 ```json
 {
+  "$schema": "./.ai/node-boost.schema.json",
   "version": 1,
-  "generatedWith": "0.1.0",
+  "generatedWith": "0.4.0",
   "stack": "next",
   "agents": ["claude-code", "codex", "cursor"],
+  "plugins": ["@acme/node-boost-plugin"],
   "features": {
     "guidelines": true,
     "skills": true,
@@ -140,7 +154,8 @@ npx node-boost update
   "architectures": [
     { "name": "feature-modules", "boundary": "public-api" },
     "server-first-components",
-    "data-access-layer"
+    "data-access-layer",
+    { "name": "@acme/node-boost-plugin:service-layer", "variant": "strict" }
   ],
   "audit": {
     "exclude": [],
@@ -158,6 +173,57 @@ npx node-boost update
 ```
 
 Project overrides live under `.node-boost/**` and shadow built-in resources during `install` and `update`.
+
+Release candidates are verified from a clean source checkout with `npm run smoke:pack`. The smoke builds through `prepack`, installs the resulting tarball in a temporary consumer, and runs CLI install/doctor from the packed binary.
+
+## Content-only plugins
+
+Plugins are installed as ordinary project dependencies and must be listed explicitly in
+`plugins`. There is no auto-discovery or remote download. The package must export its static
+manifest as `./node-boost.plugin.json`:
+
+```json
+{
+  "name": "@acme/node-boost-plugin",
+  "version": "1.0.0",
+  "exports": {
+    "./node-boost.plugin.json": "./node-boost.plugin.json"
+  },
+  "files": ["node-boost.plugin.json", "resources"]
+}
+```
+
+```json
+{
+  "apiVersion": 1,
+  "name": "@acme/node-boost-plugin",
+  "architectures": [{
+    "slug": "service-layer",
+    "title": "Service layer",
+    "stacks": ["next", "vite-react"],
+    "resources": {
+      "guideline": "resources/service-layer/guideline.md",
+      "skill": "resources/service-layer/SKILL.md",
+      "variants": {
+        "strict": { "guideline": "resources/service-layer/strict.md" }
+      }
+    }
+  }]
+}
+```
+
+Plugin resource paths are package-relative, cannot traverse outside the package, and are
+validated before node-boost writes any generated files. Plugins are content-only: executable
+third-party audit rules are rejected. The plugin entrypoint is never imported; packages using
+the executable `0.2.0` default-export contract receive a migration error instead.
+
+## Interface stability
+
+The CLI commands, their machine-readable reports, and MCP tools are the stable product surface.
+Since `0.2.0`, the package root is intentionally not a JavaScript API. Since `0.3.0`, custom
+architecture extensions use the static manifest contract. Authoring tools may use the dedicated
+`@node-boost/node-boost/plugin` subpath, which exposes only content-plugin validation and types.
+Imports from package internals are unsupported.
 
 ## CI
 

@@ -1,12 +1,12 @@
-import type { AuditResult } from "../audit/rule.js";
+import { auditGateFailed, type AuditResult } from "../audit/rule.js";
 import type { HookResponse } from "./adapter.js";
 import { renderBlockingReason } from "./report.js";
 
 export function formatCodexHook(result: AuditResult): HookResponse {
-  if (result.err > 0) {
+  if (auditGateFailed(result)) {
     return {
       exitCode: 0,
-      stdout: `${JSON.stringify({ decision: "block", reason: renderBlockingReason(result) })}\n`,
+      stdout: `${JSON.stringify({ continue: false, stopReason: renderBlockingReason(result) })}\n`,
       stderr: "",
     };
   }

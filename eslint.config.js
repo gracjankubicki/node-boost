@@ -13,6 +13,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "tests/fixtures/**", "eslint.config.js"],
+    ignores: ["dist/**", "node_modules/**", "coverage/**", "tests/fixtures/**", "examples/**", "eslint.config.js"],
   },
 );
