@@ -172,6 +172,89 @@ describe("detectStack", () => {
     }
   });
 
+  it("only reads Next capabilities from the exported configuration object", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-exported-capability-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { next: "^16.0.0", react: "^19.0.0" } }, null, 2),
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "next.config.ts"),
+        [
+          "const example = { cacheComponents: true, reactCompiler: true };",
+          "const config = { cacheComponents: false, reactCompiler: false, example };",
+          "export default config;",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.capabilities).toEqual({ reactCompiler: false, nextCacheComponents: false });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves defineConfig and CommonJS exports before reading capabilities", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-config-root-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { next: "^16.0.0", react: "^19.0.0" } }, null, 2),
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "next.config.ts"),
+        "export default defineConfig({ cacheComponents: true, reactCompiler: true });\n",
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "babel.config.js"),
+        "module.exports = { plugins: [['babel-plugin-react-compiler']] };\n",
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.capabilities).toEqual({ reactCompiler: true, nextCacheComponents: true });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("tracks every rich-text package recognized by the audit", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-rich-text-packages-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({
+          private: true,
+          dependencies: {
+            react: "^19.0.0",
+            vite: "^6.0.0",
+            xss: "^1.0.15",
+            "react-html-parser": "^2.0.2",
+          },
+        }, null, 2),
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.packages.xss.version).toBe("1.0.15");
+      expect(stack.packages["react-html-parser"].version).toBe("2.0.2");
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("recognizes the React Compiler only in a structural Babel plugins entry", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "node-boost-babel-capability-"));
 

@@ -100,6 +100,7 @@ function isBoundaryValidated(boundary: CallExpression, sourceFile: SourceFile, b
     && sameLexicalBlock(declaration, call)
     && validatorResultIsUsed(call, sourceFile)
     && call.getArguments().some((argument) => directlyReferencesIdentifier(argument, variableName))
+    && !identifierIsUsedBeforeCall(nameNode, declaration, call)
     && !identifierIsUsedAfterCall(nameNode, call),
   );
 }
@@ -256,6 +257,17 @@ function identifierIsUsedAfterCall(identifier: Node, call: CallExpression): bool
   return identifier.findReferencesAsNodes().some((reference) =>
     reference.getSourceFile() === call.getSourceFile()
     && reference.getStart() > call.getEnd(),
+  );
+}
+
+function identifierIsUsedBeforeCall(identifier: Node, declaration: Node, call: CallExpression): boolean {
+  if (!Node.isIdentifier(identifier)) {
+    return true;
+  }
+  return identifier.findReferencesAsNodes().some((reference) =>
+    reference.getSourceFile() === call.getSourceFile()
+    && reference.getStart() > declaration.getEnd()
+    && reference.getStart() < call.getStart(),
   );
 }
 

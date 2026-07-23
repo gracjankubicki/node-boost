@@ -1,4 +1,5 @@
 import { join, posix } from "node:path";
+import { richTextPackageNames } from "../ecosystem/packages.js";
 import type { DetectedStack, NormalizedArchitecture, ResourceSelection } from "../types.js";
 import { listResourceFiles } from "./resources.js";
 
@@ -40,12 +41,7 @@ export async function composeSkills(
     selected.add("localization-workflow/SKILL.md");
   }
 
-  if (
-    stack.packages["html-react-parser"]?.version ||
-    stack.packages.dompurify?.version ||
-    stack.packages["isomorphic-dompurify"]?.version ||
-    stack.packages["sanitize-html"]?.version
-  ) {
+  if (richTextPackageNames.some((packageName) => stack.packages[packageName]?.version)) {
     selected.add("trusted-rich-text-rendering/SKILL.md");
   }
 

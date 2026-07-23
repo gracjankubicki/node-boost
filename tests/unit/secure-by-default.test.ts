@@ -58,6 +58,32 @@ describe("NB-ARCH-011", () => {
       },
     );
   });
+
+  it("rejects a sanitized binding that is overwritten before the HTML sink", async () => {
+    await withProject(
+      [
+        'import DOMPurify from "dompurify";',
+        "export function Html({ userInput }: { userInput: string }) {",
+        "  let clean = DOMPurify.sanitize(userInput);",
+        "  const stillClean = clean;",
+        "  clean = userInput;",
+        "  return <>",
+        "    <div dangerouslySetInnerHTML={{ __html: clean }} />",
+        "    <div dangerouslySetInnerHTML={{ __html: stillClean }} />",
+        "  </>;",
+        "}",
+      ].join("\n"),
+      {},
+      async (projectRoot) => {
+        const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+        const findings = result.findings.filter((finding) => finding.rule === "NB-ARCH-011");
+
+        expect(findings).toEqual([
+          expect.objectContaining({ line: 7 }),
+        ]);
+      },
+    );
+  });
 });
 
 async function withProject(

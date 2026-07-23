@@ -37,6 +37,7 @@ const currentDocs: Record<string, string> = {
   orval: "https://orval.dev/overview",
   playwright: "https://playwright.dev/docs/intro",
   prettier: "https://prettier.io/docs/",
+  "react-html-parser": "https://github.com/wrakky/react-html-parser#readme",
   "react-hook-form": "https://react-hook-form.com/get-started",
   "react-i18next": "https://react.i18next.com/",
   "react-query-kit": "https://github.com/HuolalaTech/react-query-kit#readme",
@@ -46,6 +47,7 @@ const currentDocs: Record<string, string> = {
   typescript: "https://www.typescriptlang.org/docs/handbook/intro.html",
   valibot: "https://valibot.dev/guides/introduction/",
   vitest: "https://vitest.dev/guide/",
+  xss: "https://github.com/leizongmin/js-xss#readme",
   zod: "https://zod.dev/",
   zustand: "https://zustand.docs.pmnd.rs/getting-started/introduction",
 };

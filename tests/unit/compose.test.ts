@@ -149,6 +149,27 @@ describe("resource composition", () => {
     }
   });
 
+  it("selects trusted rich-text guidance for every supported parser and sanitizer", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
+
+    for (const packageName of ["xss", "react-html-parser"]) {
+      const isolated = {
+        ...stack,
+        packages: Object.fromEntries(
+          Object.entries(stack.packages).map(([name, pkg]) => [
+            name,
+            name === packageName
+              ? { ...pkg, name, declaredRange: "^1.0.0", version: "1.0.0", major: 1, source: "range" as const }
+              : { ...pkg, version: null, major: null, source: "missing" as const },
+          ]),
+        ),
+      };
+      const paths = (await composeSkills(repoRoot, isolated)).map((resource) => resource.sourcePath);
+
+      expect(paths).toContain("resources/react/skills/trusted-rich-text-rendering/SKILL.md");
+    }
+  });
+
   it("snapshots composed .ai guidelines for Next and Vite fixtures", async () => {
     const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
     const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));

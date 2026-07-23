@@ -1,47 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Node, Project, ScriptKind, SyntaxKind, type Expression } from "ts-morph";
+import {
+  Node,
+  Project,
+  ScriptKind,
+  SyntaxKind,
+  type Expression,
+  type ObjectLiteralExpression,
+  type SourceFile,
+} from "ts-morph";
+import { trackedPackageNames } from "../ecosystem/packages.js";
 import { detectPackageManager } from "./package-manager.js";
 import { detectNextRouter } from "./router.js";
 import type { DetectedStack, LintingKind, PackageInfo, StackName } from "../types.js";
-
-const trackedPackages = [
-  "next",
-  "react",
-  "vite",
-  "react-router",
-  "react-router-dom",
-  "typescript",
-  "tailwindcss",
-  "zod",
-  "valibot",
-  "@tanstack/react-query",
-  "react-query-kit",
-  "swr",
-  "zustand",
-  "nuqs",
-  "react-hook-form",
-  "msw",
-  "storybook",
-  "@storybook/react",
-  "@mantine/core",
-  "i18next",
-  "react-i18next",
-  "@lingui/core",
-  "html-react-parser",
-  "dompurify",
-  "isomorphic-dompurify",
-  "sanitize-html",
-  "orval",
-  "openapi-typescript",
-  "babel-plugin-react-compiler",
-  "vitest",
-  "jest",
-  "playwright",
-  "eslint",
-  "prettier",
-  "@biomejs/biome",
-] as const;
 
 type PackageJson = {
   dependencies?: Record<string, string>;
@@ -124,17 +95,26 @@ async function detectCapabilities(rootDir: string, packageJson: PackageJson): Pr
     });
     const isNextConfig = fileName.startsWith("next.config.");
     const ownsCompilerPlugins = fileName.startsWith("vite.config.") || fileName.startsWith("babel.config.");
+    const config = exportedConfigObject(sourceFile);
+    if (!config) {
+      continue;
+    }
 
-    for (const property of sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAssignment)) {
+    if (isNextConfig) {
+      const reactCompiler = propertyInitializer(config, "reactCompiler");
+      const cacheComponents = propertyInitializer(config, "cacheComponents");
+      if (reactCompiler && (Node.isTrueLiteral(reactCompiler) || Node.isObjectLiteralExpression(reactCompiler))) {
+        capabilities.reactCompiler = true;
+      }
+      if (cacheComponents && Node.isTrueLiteral(cacheComponents)) {
+        capabilities.nextCacheComponents = true;
+      }
+    }
+
+    for (const property of config.getDescendantsOfKind(SyntaxKind.PropertyAssignment)) {
       const name = propertyName(property.getNameNode());
       const initializer = unwrapExpression(property.getInitializer());
 
-      if (isNextConfig && name === "reactCompiler" && initializer && (Node.isTrueLiteral(initializer) || Node.isObjectLiteralExpression(initializer))) {
-        capabilities.reactCompiler = true;
-      }
-      if (isNextConfig && name === "cacheComponents" && initializer && Node.isTrueLiteral(initializer)) {
-        capabilities.nextCacheComponents = true;
-      }
       if (ownsCompilerPlugins && name === "plugins" && initializer && Node.isArrayLiteralExpression(initializer) && hasCompilerPluginElement(initializer.getElements())) {
         capabilities.reactCompiler = true;
       }
@@ -154,6 +134,75 @@ async function detectCapabilities(rootDir: string, packageJson: PackageJson): Pr
   }
 
   return capabilities;
+}
+
+function exportedConfigObject(sourceFile: SourceFile): ObjectLiteralExpression | undefined {
+  const exportAssignment = sourceFile.getExportAssignments().find((assignment) => !assignment.isExportEquals());
+  if (exportAssignment) {
+    return resolveConfigObject(exportAssignment.getExpression(), sourceFile, new Set());
+  }
+
+  for (const statement of sourceFile.getStatements()) {
+    if (!Node.isExpressionStatement(statement)) {
+      continue;
+    }
+    const expression = unwrapExpression(statement.getExpression());
+    if (
+      expression
+      && Node.isBinaryExpression(expression)
+      && expression.getOperatorToken().getKind() === SyntaxKind.EqualsToken
+      && expression.getLeft().getText() === "module.exports"
+    ) {
+      return resolveConfigObject(expression.getRight(), sourceFile, new Set());
+    }
+  }
+
+  return undefined;
+}
+
+function resolveConfigObject(
+  expression: Expression,
+  sourceFile: SourceFile,
+  visited: Set<string>,
+): ObjectLiteralExpression | undefined {
+  const current = unwrapExpression(expression);
+  if (!current) {
+    return undefined;
+  }
+  if (Node.isObjectLiteralExpression(current)) {
+    return current;
+  }
+  if (Node.isIdentifier(current)) {
+    const name = current.getText();
+    if (visited.has(name)) {
+      return undefined;
+    }
+    visited.add(name);
+    const initializer = current.getSymbol()?.getDeclarations().find(Node.isVariableDeclaration)?.getInitializer()
+      ?? sourceFile.getVariableDeclaration(name)?.getInitializer();
+    return initializer ? resolveConfigObject(initializer, sourceFile, visited) : undefined;
+  }
+  if (
+    Node.isCallExpression(current)
+    && current.getExpression().getText() === "defineConfig"
+  ) {
+    const [argument] = current.getArguments();
+    return argument && Node.isExpression(argument)
+      ? resolveConfigObject(argument, sourceFile, visited)
+      : undefined;
+  }
+
+  return undefined;
+}
+
+function propertyInitializer(
+  object: ObjectLiteralExpression,
+  name: string,
+): Expression | undefined {
+  const property = object.getProperty(name);
+  return property && Node.isPropertyAssignment(property)
+    ? unwrapExpression(property.getInitializer())
+    : undefined;
 }
 
 function hasCompilerPluginElement(elements: Node[]): boolean {
@@ -221,7 +270,7 @@ function detectLinting(packages: Record<string, PackageInfo>): LintingKind {
 async function detectPackages(rootDir: string, packageJson: PackageJson): Promise<Record<string, PackageInfo>> {
   const packages: Record<string, PackageInfo> = {};
 
-  for (const packageName of trackedPackages) {
+  for (const packageName of trackedPackageNames) {
     const declaredRange = findDeclaredRange(packageJson, packageName);
     const installedVersion = await readInstalledVersion(rootDir, packageName);
     const version = installedVersion ?? extractVersionFromRange(declaredRange);

@@ -44,6 +44,7 @@
     "resources",
     "schema.json",
     "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
     "LICENSE.md",
     "README.md"
   ],
@@ -66,7 +67,6 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "citty": "^0.2.2",
     "picomatch": "^4.0.5",
     "smol-toml": "^1.7.0",
@@ -75,6 +75,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^26.1.1",
     "@types/picomatch": "^4.0.3",
     "eslint": "^10.6.0",
@@ -86,7 +87,6 @@
   },
   "overrides": {
     "@hono/node-server": "^2.0.11",
-    "esbuild": "^0.28.1",
-    "fast-uri": "^4.1.1"
+    "esbuild": "^0.28.1"
   }
 }

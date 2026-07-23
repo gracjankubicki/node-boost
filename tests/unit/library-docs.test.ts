@@ -84,6 +84,28 @@ describe("library documentation", () => {
       versionSource: "installed",
     });
   });
+
+  it("provides official references for every supported rich-text package", async () => {
+    const detected = await detectStack(join(repoRoot, "tests/fixtures/next-app"));
+    const stack: DetectedStack = {
+      ...detected,
+      packages: {
+        xss: pkg("xss", "1.0.15"),
+        "react-html-parser": pkg("react-html-parser", "2.0.2"),
+      },
+    };
+
+    expect(resolveLibraryDocumentation(stack)).toEqual([
+      expect.objectContaining({
+        packageName: "react-html-parser",
+        officialDocsUrl: "https://github.com/wrakky/react-html-parser#readme",
+      }),
+      expect.objectContaining({
+        packageName: "xss",
+        officialDocsUrl: "https://github.com/leizongmin/js-xss#readme",
+      }),
+    ]);
+  });
 });
 
 function pkg(name: string, version: string): PackageInfo {

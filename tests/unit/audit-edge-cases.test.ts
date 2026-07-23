@@ -119,6 +119,14 @@ describe("audit edge cases", () => {
           "  return schema.parse({ ...(await response.json()), other });",
           "}",
         ],
+        [
+          "export async function load(response: Response) {",
+          "  const raw = await response.json();",
+          "  consume(raw);",
+          "  const validated = schema.parse(raw);",
+          "  return validated;",
+          "}",
+        ],
       ];
 
       for (const source of unsafeSources) {

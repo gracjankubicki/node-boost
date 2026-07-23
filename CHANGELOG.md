@@ -7,7 +7,7 @@
 - Added generated `.ai/docs/llms.txt` and the MCP `library_docs` tool with honest installed-versus-declared version sources and conservative documentation fallbacks.
 - Expanded AST auditing for HTML parser sinks and per-boundary runtime validation without trusting comments, strings, unrelated parsers, unused validation results, or generated clients globally.
 - Kept Vite React detection independent of router presence and made default architecture selection capability-aware.
-- Updated vulnerable transitive MCP, URL parsing, and build dependencies through tested package overrides.
+- Bundled the used MCP stdio runtime into the CLI so consumers do not install the SDK's unused vulnerable HTTP adapter tree; kept tested build-only overrides local to this repository.
 - Preserved fail-closed audit, strict config/plugin validation, generated-resource ownership, lifecycle conflict handling, and release gates from `0.3.0`.
 
 ## 0.3.0 - 2026-07-16

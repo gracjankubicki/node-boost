@@ -1,10 +1,15 @@
-import { Node, SyntaxKind, type Expression, type SourceFile } from "ts-morph";
+import { Node, SyntaxKind, type Expression, type Identifier, type SourceFile } from "ts-morph";
+import {
+  callableSanitizerPackageNames,
+  htmlParserPackageNames,
+  objectSanitizerPackageNames,
+} from "../../ecosystem/packages.js";
 import type { AuditFile, AuditFinding, AuditRule } from "../rule.js";
 import { callTarget, environmentAccesses, finding } from "./helpers.js";
 
-const htmlParserPackages = new Set(["html-react-parser", "react-html-parser"]);
-const objectSanitizerPackages = new Set(["dompurify", "isomorphic-dompurify"]);
-const callableSanitizerPackages = new Set(["sanitize-html", "xss"]);
+const htmlParserPackages = new Set<string>(htmlParserPackageNames);
+const objectSanitizerPackages = new Set<string>(objectSanitizerPackageNames);
+const callableSanitizerPackages = new Set<string>(callableSanitizerPackageNames);
 
 interface HtmlBindings {
   parserFunctions: Set<string>;
@@ -212,7 +217,7 @@ function isSafeHtmlExpression(
   }
 
   const name = expression.getText();
-  if (visited.has(name)) {
+  if (visited.has(name) || identifierHasWriteBefore(expression)) {
     return false;
   }
   visited.add(name);
@@ -220,6 +225,50 @@ function isSafeHtmlExpression(
   return initializer && initializer !== expression
     ? isSafeHtmlExpression(initializer, sourceFile, bindings, visited)
     : false;
+}
+
+function identifierHasWriteBefore(identifier: Identifier): boolean {
+  return identifier.findReferencesAsNodes().some((reference) =>
+    reference.getSourceFile() === identifier.getSourceFile()
+    && reference.getStart() < identifier.getStart()
+    && isWriteReference(reference),
+  );
+}
+
+function isWriteReference(reference: Node): boolean {
+  const update = reference.getParent();
+  if (
+    update
+    && (Node.isPrefixUnaryExpression(update) || Node.isPostfixUnaryExpression(update))
+    && (update.getOperatorToken() === SyntaxKind.PlusPlusToken || update.getOperatorToken() === SyntaxKind.MinusMinusToken)
+  ) {
+    return true;
+  }
+
+  const binary = reference.getFirstAncestorByKind(SyntaxKind.BinaryExpression);
+  if (binary) {
+    const operator = binary.getOperatorToken().getKind();
+    const left = binary.getLeft();
+    if (
+      operator >= SyntaxKind.FirstAssignment
+      && operator <= SyntaxKind.LastAssignment
+      && reference.getStart() >= left.getStart()
+      && reference.getEnd() <= left.getEnd()
+    ) {
+      return true;
+    }
+  }
+
+  const forIn = reference.getFirstAncestorByKind(SyntaxKind.ForInStatement);
+  if (forIn && reference.getStart() >= forIn.getInitializer().getStart() && reference.getEnd() <= forIn.getInitializer().getEnd()) {
+    return true;
+  }
+  const forOf = reference.getFirstAncestorByKind(SyntaxKind.ForOfStatement);
+  return Boolean(
+    forOf
+    && reference.getStart() >= forOf.getInitializer().getStart()
+    && reference.getEnd() <= forOf.getInitializer().getEnd(),
+  );
 }
 
 function unwrapExpression(expression: Expression): Expression {
