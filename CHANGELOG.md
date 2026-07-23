@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 - 2026-07-22
+
+- Added capability-aware stack detection for React Compiler and Next Cache Components using structural config parsing.
+- Added broader React ecosystem detection and conditional guidance for React Router, Valibot, SWR, React Hook Form, Storybook, Mantine, i18n, testing, generated clients, and rich text.
+- Added generated `.ai/docs/llms.txt` and the MCP `library_docs` tool with honest installed-versus-declared version sources and conservative documentation fallbacks.
+- Expanded AST auditing for HTML parser sinks and per-boundary runtime validation without trusting comments, strings, unrelated parsers, unused validation results, or generated clients globally.
+- Kept Vite React detection independent of router presence and made default architecture selection capability-aware.
+- Bundled the used MCP stdio runtime into the CLI so consumers do not install the SDK's unused vulnerable HTTP adapter tree; kept tested build-only overrides local to this repository.
+- Preserved fail-closed audit, strict config/plugin validation, generated-resource ownership, lifecycle conflict handling, and release gates from `0.3.0`.
+
 ## 0.3.0 - 2026-07-16
 
 - Made `guard` and agent hooks fail closed when source files cannot be fully audited.

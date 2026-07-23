@@ -1,6 +1,6 @@
 ---
 name: next-development
-description: Build Next.js App Router features end-to-end — server-first pages, data layer, Server Actions, boundaries — per this project's version and conventions.
+description: Build Next.js App Router features using the detected major, configured capabilities, and established project conventions.
 ---
 
 # Next Development
@@ -11,9 +11,9 @@ Use when adding or changing pages, layouts, route handlers, Server Actions, or d
 
 ## Procedure
 
-1. Check the Next major (`application_info`) and follow the versioned guideline — caching semantics differ between 15 and 16.
-2. New route: folder in `app/`, async server `page.tsx`, data via the feature's `api/` functions; add `loading.tsx`/`error.tsx` when the page fetches (error-loading-boundaries skill).
-3. Interactivity goes into `"use client"` leaf components inside the feature (server-first-components skill).
-4. Mutations: Server Action with auth check + zod validation, then cache invalidation (`revalidateTag`/`updateTag` per version).
+1. Read local instructions and nearby routes, then check the Next major (`application_info` when Node Boost is installed). Next 14, 15, and 16 cache semantics differ; in Next 16 also inspect `next.config.*` for `cacheComponents`.
+2. New route: follow the existing `app/` and data-layer layout. Keep the page server-first when practical; add inherited or local loading/error boundaries only when the route genuinely suspends on remote data.
+3. Interactivity usually goes into a `"use client"` leaf using the repository's component/feature layout (server-first-components skill). Document deliberate browser-only route exceptions.
+4. Mutations: preserve the established Server Action, Route Handler, SWR/Query, form, and runtime-schema stack. Every server mutation still requires auth, authorization, validation, and precise cache updates/invalidation.
 5. Use framework primitives: `next/image`, `next/font`, `next/link`, Metadata API.
-6. Before handing back: `node-boost audit --changed` and fix findings.
+6. Before handing back, run repository-approved validation. If Node Boost is installed, also run `node-boost audit --changed`.

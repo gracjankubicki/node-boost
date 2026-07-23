@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind, type Expression } from "ts-morph";
 import type { AuditFile, AuditRule } from "../rule.js";
 import { finding, isNextEntryPath } from "./helpers.js";
 
@@ -13,7 +13,7 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
     kind: "project",
     check(context) {
       return context.files.flatMap((file) => {
-        if (!isNextEntryPath(file.path, "page") || !isAsyncPage(file)) {
+        if (!isNextEntryPath(file.path, "page") || !hasSuspendingCall(file)) {
           return [];
         }
 
@@ -25,18 +25,28 @@ export const errorLoadingBoundaryRules: AuditRule[] = [
   },
 ];
 
-function isAsyncPage(file: AuditFile): boolean {
+function hasSuspendingCall(file: AuditFile): boolean {
   if (!file.sourceFile) {
     return false;
   }
 
-  if (file.sourceFile.getDescendantsOfKind(SyntaxKind.AwaitExpression).length > 0) {
-    return true;
-  }
+  return file.sourceFile.getDescendantsOfKind(SyntaxKind.AwaitExpression).some((awaitExpression) =>
+    Node.isCallExpression(unwrapExpression(awaitExpression.getExpression())),
+  );
+}
 
-  return file.sourceFile.getFunctions().some((declaration) => declaration.isAsync())
-    || file.sourceFile.getDescendantsOfKind(SyntaxKind.ArrowFunction).some((declaration) => declaration.isAsync())
-    || file.sourceFile.getDescendantsOfKind(SyntaxKind.FunctionExpression).some((declaration) => declaration.isAsync());
+function unwrapExpression(expression: Expression): Expression {
+  let current = expression;
+  while (
+    Node.isParenthesizedExpression(current)
+    || Node.isAsExpression(current)
+    || Node.isTypeAssertion(current)
+    || Node.isNonNullExpression(current)
+    || Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
 }
 
 function hasBoundaryInBranch(pagePath: string, allPaths: Set<string>): boolean {

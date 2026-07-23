@@ -12,7 +12,7 @@ JSX escapes everything automatically. The vulnerabilities live in the escape hat
 <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(comment.body) }} />
 </code-snippet>
 
-Prefer rendering data as JSX; reach for raw HTML only for trusted rich text (CMS/editor output), always sanitized (DOMPurify client-side, isomorphic-dompurify/sanitize-html on the server — or sanitize at write time). Trusted static literals may use `// nb-disable NB-ARCH-011 -- <reason>`.
+Prefer rendering data as JSX. Treat both `dangerouslySetInnerHTML` and HTML-to-React parsers such as `html-react-parser` as raw-HTML sinks—the parser does not sanitize. Establish content provenance, use an approved runtime-compatible sanitizer with an element/attribute/URL allowlist, and test malicious scripts, event handlers, and `javascript:` URLs. A verified write-time sanitization guarantee or trusted literal may use `// nb-disable NB-ARCH-011 -- <reason>` with the trust boundary named.
 
 ## Public env prefixes are publication
 
@@ -24,7 +24,7 @@ Every `"use server"` function compiles to an HTTP endpoint anyone can call. Trea
 
 1. **Authenticate** the caller,
 2. **authorize** the operation,
-3. **validate** the input (zod — typed-contracts),
+3. **validate** the input with the installed runtime schema (typed-contracts),
 4. return only what the caller may see.
 
 Never assume "only my form calls this".

@@ -11,8 +11,8 @@ Use when styling components, adding visual variants, or touching Tailwind config
 
 ## Procedure
 
-1. Check the project's Tailwind major (see application_info / package.json). v4: config lives in CSS (`@theme`); never create `tailwind.config.js`. v3: JS config applies.
+1. Check the project's Tailwind major and existing configuration. v4 is CSS-first (`@theme`) but may deliberately load a legacy JS config through `@config`; v3 uses JS configuration.
 2. New color/spacing → add a token to the theme; avoid arbitrary values unless one-off and justified.
-3. Component with visual variants → define with cva, merge overrides with tailwind-merge, expose a `variant` prop.
+3. Component with meaningful visual variants → use the project's existing mechanism (often CVA + tailwind-merge); simple conditional classes may remain clearer.
 4. Conditional classes → `cn(base, cond && "...")`; never template-interpolate class fragments.
-5. Same class string appearing twice → extract a component in `components/ui/`.
+5. Extract a component only when repeated markup shares semantics/behavior, and place it in the repository's established shared boundary. Textual class repetition alone is not sufficient.

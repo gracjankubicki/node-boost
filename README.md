@@ -1,6 +1,6 @@
 # node-boost
 
-node-boost is Boost for the Node ecosystem: a CLI and MCP guidance layer that installs project-specific AI instructions, agent skills, audit rules, and guard hooks. v0.1 targets React apps, with first-class support for Next.js and Vite React projects.
+node-boost is Boost for the Node ecosystem: a CLI and MCP guidance layer that installs project-specific AI instructions, agent skills, audit rules, and guard hooks. It targets React apps, with first-class support for Next.js and Vite React projects.
 
 No telemetry. node-boost reads your local project, writes local files, and does not phone home.
 
@@ -19,7 +19,7 @@ intentionally small `@node-boost/node-boost/plugin` subpath remains available to
 authoring tools for validation and TypeScript types; installer, MCP, and audit internals are
 not exposed.
 
-The installer detects your stack, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, and configures selected agents:
+The installer detects your stack and capabilities, writes `node-boost.json`, composes `.ai/guidelines/**` and `.ai/skills/**`, generates `.ai/docs/llms.txt`, and configures selected agents:
 
 - Claude Code: `CLAUDE.md`, `.claude/skills/**`, `.mcp.json`, optional `.claude/settings.json` hooks.
 - Codex: `AGENTS.md`, `.agents/skills/**`, `.codex/config.toml`, optional `.codex/hooks.json`.
@@ -48,11 +48,23 @@ npx node-boost doctor --agent
 
 | Tool | Purpose |
 | --- | --- |
-| `application_info` | Return detected stack, package manager, packages, routes, and node-boost config summary. |
+| `application_info` | Return detected stack, capabilities, package manager, packages, routes, and node-boost config summary. |
+| `library_docs` | Return version-aware official documentation routes and exact package references. |
 | `list_routes` | List Next app routes, including route handlers and parallel slots. |
 | `doctor` | Run the same full checks as `node-boost doctor`. |
 | `audit` | Run `node-boost audit --all` and return JSON. |
 | `explain_finding` | Explain a rule such as `NB-ARCH-005`. |
+
+## Library Documentation
+
+`install` and `update` generate `.ai/docs/llms.txt` from detected dependency versions. Agents are instructed to prefer its version-matched routes over current-only upstream documentation.
+
+The routing policy is conservative:
+
+- Prefer an official exact- or major-version archive when one is available.
+- Otherwise use the exact npm package version as the primary reference and list current upstream docs as secondary.
+- Keep an upstream `llms.txt` as secondary when it describes only the current release.
+- When `node_modules` is unavailable, label versions as inferred from declared ranges. Install dependencies and run `node-boost update` to pin resolved versions.
 
 ## Architecture Patterns
 
@@ -128,7 +140,7 @@ npx node-boost update
 {
   "$schema": "./.ai/node-boost.schema.json",
   "version": 1,
-  "generatedWith": "0.3.0",
+  "generatedWith": "0.4.0",
   "stack": "next",
   "agents": ["claude-code", "codex", "cursor"],
   "plugins": ["@acme/node-boost-plugin"],
@@ -251,7 +263,7 @@ Keep implementation planning local unless your team wants to publish it:
 implementation-plans/
 ```
 
-Generated `.ai/**`, agent files, and `node-boost.json` are intended to be committed in consumer projects.
+Generated `.ai/**`, including `.ai/docs/llms.txt`, agent files, and `node-boost.json` are intended to be committed in consumer projects.
 
 ## Roadmap
 

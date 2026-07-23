@@ -11,8 +11,8 @@ Use when creating or refactoring components, hooks, or client-side state.
 
 ## Procedure
 
-1. Check the React major (`application_info`) and follow the versioned guideline — 18 vs 19 idioms differ (ref-as-prop, Actions, compiler memoization).
-2. New component: start from composition (children/slots), semantic HTML, props for variants only (component-composition skill).
-3. State: classify first — server data → query hooks; URL-worthy → searchParams; local → `useState`; shared client → Context/store (state-management skill).
-4. Logic outgrowing the JSX → extract a custom hook in the feature (custom-hooks skill); avoid needless `useEffect` and ritual memoization.
-5. Cover the four UI states (ui-states skill) and add behavior tests (testing-frontend skill).
+1. Read local instructions and nearby code, then check the React major (`application_info` when Node Boost is installed). Separately verify optional capabilities such as React Compiler, server Actions, the form stack, and the server-state library.
+2. New component: match the existing design system and shared-component boundary; prefer composition and semantic HTML (component-composition skill).
+3. State: classify first—backend data → the installed server cache/RSC; URL-worthy → the existing URL-state mechanism; local → `useState`; shared client-owned state → Context/store (state-management skill).
+4. Logic outgrowing JSX → colocate a custom hook using the repository's convention (custom-hooks skill). Avoid needless effects and preserve referential guarantees unless the configured compiler or profiling proves they are unnecessary.
+5. For remote-data views, design applicable loading/error/empty behavior. Add tests only through installed tooling and repository-approved commands.

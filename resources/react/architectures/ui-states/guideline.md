@@ -1,6 +1,6 @@
 # UI States
 
-Every data view has four states, not one. Design loading, error and empty explicitly — apps spend ~30% of their time off the happy path, and generated code habitually builds only the happy branch.
+Meaningful remote-data views need deliberate off-happy-path behavior. Implement the states that can actually occur; do not force loading/error/empty branches onto static components.
 
 <code-snippet name="The four-state contract" lang="tsx">
 function InvoiceList() {
@@ -28,18 +28,20 @@ function InvoiceList() {
 
 Skeletons mirror the coming content's shape (no layout shift). One skeleton per meaningful region — five racing spinners are worse than one calm block. In Next, `loading.tsx` is the page-level skeleton (see error-loading-boundaries); in SPAs, per-view skeleton components.
 
-## Optimistic UI (React 19)
+## Optimistic UI
 
-For high-confidence mutations (toggle, like, add-to-list) use `useOptimistic` — instant UI, automatic rollback on error. Forms: `useActionState` handles pending/error without hand-rolled `isSubmitting`/`setError` flags. Do **not** use optimistic updates for payments or irreversible operations.
+Use the project's query/SWR mutation facilities when they own the server cache. In an Action-based React 19 flow, `useOptimistic` can provide instant feedback and `useActionState` can represent form results. Do **not** use optimistic updates for payments or irreversible operations.
 
 <code-snippet name="Optimistic toggle" lang="tsx">
 const [optimisticDone, setOptimisticDone] = useOptimistic(todo.done)
 async function toggle() {
-  setOptimisticDone(!optimisticDone)   // instant
-  await toggleTodoAction(todo.id)      // rollback happens automatically on error
+  startTransition(async () => {
+    setOptimisticDone(!optimisticDone)
+    await toggleTodoAction(todo.id)
+  })
 }
 </code-snippet>
 
 ## Consistency
 
-`EmptyState`/`ErrorState` are shared slot-based components in `components/ui/` — not ad-hoc divs per feature. Test all four states (testing-strategy).
+Reuse established `EmptyState`/`ErrorState` components when present. Test the applicable states with the repository's installed test stack (testing-strategy).

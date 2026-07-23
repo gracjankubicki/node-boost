@@ -27,8 +27,8 @@ export function InvoiceFilter() {
 
 `"use client"` marks a boundary, not a component: everything imported below it becomes client code. Server Components can render Client Components and pass serializable props (no functions, no class instances) — compose interactivity in, don't lift the whole page out.
 
-## Next 16 specifics
+## Next 16 capability check
 
-- Nothing is cached by default; caching is explicit via `"use cache"` on components/functions — which only works if the tree stays server-first.
-- Partial Prerendering splits pages into a static shell plus dynamic holes in `<Suspense>`. A client-rooted page opts out of all of it.
+- `"use cache"`, `cacheLife`, and the Cache Components shell/dynamic-hole model require `cacheComponents: true` in `next.config.*`.
+- Without that flag, keep the project's fetch/revalidation and dynamic-rendering model; server-first boundaries still reduce client JavaScript.
 - Do not generate legacy idioms: `getServerSideProps`/`getStaticProps` belong to the Pages Router, not here.

@@ -12,6 +12,7 @@ import { applyResourceOverrides } from "../compose/overrides.js";
 import { composeGuidelines } from "../compose/guidelines.js";
 import { composeSkills } from "../compose/skills.js";
 import { renderGuidelinesIndex } from "../compose/index-file.js";
+import { renderLibraryDocumentationLlmsTxt } from "../compose/library-docs.js";
 import {
   nodeBoostConfigSchema,
   normalizeArchitectures,
@@ -163,6 +164,7 @@ export async function buildInstallOperations(input: {
     agentInstallers[agentName]
       .render({
         guidelinesIndexPath: ".ai/guidelines/node-boost.md",
+        libraryDocsPath: ".ai/docs/llms.txt",
         skillsIndexPath: ".ai/skills",
         selectedSkills,
         existingContent: (path) => shouldReadIntegrationContent(path, input.config.features, agentName, hookAgents)
@@ -178,6 +180,10 @@ export async function buildInstallOperations(input: {
 
   return dedupeOperations([
     schemaOperation,
+    {
+      path: ".ai/docs/llms.txt",
+      content: renderLibraryDocumentationLlmsTxt(input.stack),
+    },
     ...guidelineOperations,
     {
       path: ".ai/guidelines/node-boost.md",
@@ -518,9 +524,15 @@ async function promptArchitectures(projectRoot: string, stack: DetectedStack): P
 async function defaultArchitectures(projectRoot: string, stack: DetectedStack): Promise<ArchitectureConfigEntry[]> {
   const adapter = getStackAdapter(stack);
   const architectures = adapter?.recommendedArchitectures(stack) ?? [];
+  const hasFeatureModules =
+    (await pathExists(join(projectRoot, "features"))) || (await pathExists(join(projectRoot, "src", "features")));
+
+  if (hasFeatureModules && adapter?.applicableArchitectures(stack).includes("feature-modules")) {
+    architectures.push("feature-modules");
+  }
   const featureModulesBoundary = await suggestFeatureModulesBoundary(projectRoot);
 
-  return architectures.map((architecture) =>
+  return [...new Set(architectures)].map((architecture) =>
     architecture === "feature-modules" ? { name: "feature-modules", boundary: featureModulesBoundary } : architecture,
   );
 }
