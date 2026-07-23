@@ -185,7 +185,12 @@ describe("detectStack", () => {
         join(rootDir, "next.config.ts"),
         [
           "const example = { cacheComponents: true, reactCompiler: true };",
-          "const config = { cacheComponents: false, reactCompiler: false, example };",
+          "const config = {",
+          "  cacheComponents: false,",
+          "  reactCompiler: false,",
+          "  example,",
+          "  inlineExample: { cacheComponents: true, reactCompiler: true },",
+          "};",
           "export default config;",
           "",
         ].join("\n"),
