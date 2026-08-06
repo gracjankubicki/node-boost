@@ -21,6 +21,11 @@ export interface PackageInfo {
   source: "node_modules" | "range" | "missing";
 }
 
+export interface DetectedCapabilities {
+  reactCompiler: boolean;
+  nextCacheComponents: boolean;
+}
+
 export interface DetectedStack {
   rootDir: string;
   name: StackName;
@@ -29,6 +34,7 @@ export interface DetectedStack {
   linting: LintingKind;
   packageManager: PackageManagerInfo;
   packages: Record<string, PackageInfo>;
+  capabilities: DetectedCapabilities;
   warnings: string[];
 }
 

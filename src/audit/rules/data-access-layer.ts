@@ -71,7 +71,11 @@ function isQueryHook(file: AuditFile): boolean {
   return hookFile && file.sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
     const target = callTarget(call.getExpression());
     const called = target?.split(".").at(-1);
-    return called === "useQuery" || called === "useMutation";
+    return called === "useQuery"
+      || called === "useMutation"
+      || called === "useSWR"
+      || called === "useSWRInfinite"
+      || called === "useSWRMutation";
   });
 }
 

@@ -1,43 +1,44 @@
 # Data Access Layer
 
-Components never call `fetch` directly. All data access lives in a dedicated layer: server functions in `api/` directories and client-side query hooks.
+Components do not own transport details. Route remote reads and writes through the data boundary already established by the repository.
+
+## Select the local variant first
+
+- Next server functions may live in shared `src/api`, `server/`, a feature, or another documented boundary.
+- Client server-state may use TanStack Query/react-query-kit, SWR, or a custom abstraction. Use the installed one.
+- Generated clients are transport building blocks, not proof of runtime validation. Do not edit generated output; compose generated calls and schemas through the project's wrapper.
+- Use the runtime schema library already present (for example Zod or Valibot).
 
 ## Server side (Next)
 
 <code-snippet name="Data layer function" lang="ts">
-// features/invoices/api/get-invoices.ts
 import "server-only"
 
 export async function getInvoices(filter: InvoiceFilter) {
-  "use cache"
-  const res = await apiClient.get("/invoices", { query: filter })
-  return invoiceListSchema.parse(res) // validate at the boundary (typed-contracts)
+  const response = await apiClient.get("/invoices", { query: filter })
+  return invoiceListSchema.parse(response)
 }
 </code-snippet>
 
-Server Components call `getInvoices()`, not `fetch`. Auth headers, error handling, retries and cache tags live in one place. Mutations go through Server Actions (`"use server"`) that validate input and call the data layer.
+Auth headers, timeouts, cancellation, error-envelope handling, retries, observability, runtime validation, and cache policy belong at this boundary. Caching is capability-sensitive:
+
+- Next 14: use the repository's `fetch` cache/revalidation and tags.
+- Next 15/16 without Cache Components: preserve the configured `fetch`/route model.
+- Cache Components enabled: `"use cache"`, `cacheLife`, and related APIs are available.
 
 ## Client side
 
-Components consume query hooks, never raw fetch:
-
-<code-snippet name="Query hook" lang="ts">
-// features/invoices/hooks/use-invoices.ts
-export function useInvoices(filter: InvoiceFilter) {
-  return useQuery({ queryKey: ["invoices", filter], queryFn: () => invoicesApi.list(filter) })
-}
-</code-snippet>
-
-Generated API clients (orval, openapi-typescript) **are** the data layer — use them instead of hand-writing one.
+Components consume the project's existing query/SWR/custom hooks. Stable keys, mutation behavior, cache updates, and invalidation follow nearby code. Do not add TanStack Query to an SWR application or vice versa.
 
 ## Rules
 
-- `NB-ARCH-005` (error): `fetch`/axios/ky in a client component outside the data layer and outside query hooks.
-- `NB-ARCH-006` (warn): raw `fetch` in a Server Component outside the data layer. Fetching directly in RSC is the framework idiom, but a layer keeps caching, headers and validation consistent — prefer it.
-- The layer's location is configurable via `audit.ruleOptions` (`dataLayerGlobs`, default `**/api/**`, `**/server/**`, `lib/api/**`, `route.ts`).
+- `NB-ARCH-005` (error): `fetch`/axios/ky in a client component outside the configured data layer and query hooks.
+- `NB-ARCH-006` (warn): raw network calls in a Server Component outside the data layer.
+- Configure locations with `audit.ruleOptions` (`dataLayerGlobs`, default `**/api/**`, `**/server/**`, `lib/api/**`, `route.ts`).
 
 ## Anti-patterns
 
-- `useEffect` + `useState` + `fetch` in a component — that is a hand-rolled, worse react-query.
+- `useEffect` + `useState` + `fetch` in a component.
 - Copy-pasting auth headers per call site.
-- Mutations bypassing Server Actions / the API client, losing validation and cache invalidation.
+- Assuming a generated TypeScript client makes untrusted JSON runtime-safe.
+- Blanket invalidation when a precise cache update or returned server state is available.

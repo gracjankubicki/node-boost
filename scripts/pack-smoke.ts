@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
-import { access, cp, mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { access, cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -32,6 +32,7 @@ try {
     "dist/plugin.js",
     "dist/plugin.d.ts",
     "schema.json",
+    "THIRD_PARTY_NOTICES.md",
     "resources/react/guidelines/core.md",
     "resources/react/skills/react-development/SKILL.md",
   ];
@@ -53,6 +54,32 @@ try {
   if ((cliMode & 0o111) === 0) {
     throw new Error("Packed CLI is not executable.");
   }
+  const cliSourceMap = JSON.parse(
+    await readFile(join(extracted, "package", "dist", "cli.js.map"), "utf8"),
+  ) as { sources?: string[] };
+  const bundledPackages = [...new Set(
+    (cliSourceMap.sources ?? [])
+      .map(packageNameFromNodeModulesSource)
+      .filter((name): name is string => name !== null),
+  )].sort((left, right) => left.localeCompare(right));
+  const noticedPackages = [
+    "@modelcontextprotocol/sdk",
+    "ajv",
+    "ajv-formats",
+    "fast-deep-equal",
+    "fast-uri",
+    "json-schema-traverse",
+    "zod-to-json-schema",
+  ];
+  if (JSON.stringify(bundledPackages) !== JSON.stringify(noticedPackages)) {
+    throw new Error(`Bundled third-party package inventory differs from THIRD_PARTY_NOTICES.md: ${bundledPackages.join(", ")}.`);
+  }
+  const packedPackageJson = JSON.parse(
+    await readFile(join(extracted, "package", "package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  if (packedPackageJson.dependencies?.["@modelcontextprotocol/sdk"]) {
+    throw new Error("Packed consumers must use the bundled MCP runtime instead of installing the full SDK tree.");
+  }
 
   await mkdir(join(consumerRoot, "src"), { recursive: true });
   await writeFile(
@@ -62,7 +89,8 @@ try {
   );
   await writeFile(join(consumerRoot, "tsconfig.json"), '{ "compilerOptions": { "strict": true, "jsx": "react-jsx" } }\n', "utf8");
   await writeFile(join(consumerRoot, "src", "main.tsx"), "export const App = () => <main>packed consumer</main>;\n", "utf8");
-  await run("npm", ["install", "--ignore-scripts", "--no-package-lock", tarball], consumerRoot);
+  await run("npm", ["install", "--ignore-scripts", tarball], consumerRoot);
+  await run("npm", ["audit", "--omit=dev", "--audit-level=low"], consumerRoot);
 
   const binary = join(consumerRoot, "node_modules", ".bin", "node-boost");
   const packedPluginApi = await import(
@@ -107,6 +135,7 @@ try {
     "contract.ts",
   ], consumerRoot);
   await run(binary, ["--help"], consumerRoot);
+  await assertPackedMcpStarts(binary, consumerRoot);
   await run(binary, ["install", "--no-interaction"], consumerRoot);
   const doctorOutput = await run(binary, ["doctor", "--agent"], consumerRoot);
   const doctor = JSON.parse(doctorOutput) as { ok: boolean };
@@ -150,4 +179,69 @@ async function expectMissing(path: string): Promise<void> {
     return;
   }
   throw new Error(`${path} must not exist before npm pack.`);
+}
+
+async function assertPackedMcpStarts(binary: string, cwd: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(binary, ["mcp"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Packed MCP server did not initialize in time. stderr: ${stderr}`));
+    }, 10_000);
+
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+      const line = stdout.split("\n").find((candidate) => candidate.trim().length > 0);
+      if (!line) {
+        return;
+      }
+      try {
+        const response = JSON.parse(line) as { id?: unknown; result?: { serverInfo?: { name?: string } } };
+        if (response.id === 1 && response.result?.serverInfo?.name === "node-boost") {
+          clearTimeout(timer);
+          child.kill();
+          resolve();
+        }
+      } catch {
+        // Wait for a complete JSON line.
+      }
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("exit", (code) => {
+      if (code !== null && code !== 0 && !stdout.includes('"id":1')) {
+        clearTimeout(timer);
+        reject(new Error(`Packed MCP server exited with ${code}. stderr: ${stderr}`));
+      }
+    });
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "node-boost-pack-smoke", version: "1.0.0" },
+      },
+    })}\n`);
+  });
+}
+
+function packageNameFromNodeModulesSource(source: string): string | null {
+  const marker = "node_modules/";
+  const markerIndex = source.lastIndexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+  const segments = source.slice(markerIndex + marker.length).split("/");
+  return segments[0]?.startsWith("@")
+    ? segments.slice(0, 2).join("/")
+    : segments[0] ?? null;
 }

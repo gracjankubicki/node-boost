@@ -1,6 +1,6 @@
 ---
 name: testing-frontend
-description: Test features with Testing Library + MSW (Vitest) and critical journeys with Playwright — behavior over implementation.
+description: Test frontend behavior with the repository's installed runner, DOM, network-mocking, Storybook, and E2E tools.
 ---
 
 # Frontend Testing
@@ -11,8 +11,9 @@ Use when writing or fixing tests for components, hooks, or user flows.
 
 ## Procedure
 
-1. Default to a component test: render the feature entry, drive it with `userEvent`, assert via `getByRole`/`getByLabelText`.
-2. Fake the network with MSW per scenario (success/error/empty); never mock the project's own hooks or data layer.
-3. Cover the four view states, not just the happy path.
-4. Pure logic → unit test; complex hooks → `renderHook`; critical journeys → Playwright (own guideline).
-5. Bug fix? Write the failing test first, then fix.
+1. Read local instructions/scripts and nearby tests; detect Jest/Vitest, Testing Library, `userEvent`, MSW, Storybook, and E2E separately.
+2. Prefer a behavioral component test through roles/labels when the DOM toolchain is installed.
+3. Use MSW when installed; otherwise follow the existing network seam. A focused internal mock is acceptable for a deliberate unit boundary.
+4. Cover only the remote-data states the view can enter. Pure logic → unit test; complex hooks → `renderHook` when available.
+5. Update critical journeys only when the repository has an E2E runner. Adding missing infrastructure is a separate decision.
+6. Bug fix? Reproduce it with the smallest relevant test, then fix and run repository-approved commands.

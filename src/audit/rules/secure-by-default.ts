@@ -1,8 +1,23 @@
-import { Node, SyntaxKind, type Expression, type Identifier } from "ts-morph";
-import type { AuditRule } from "../rule.js";
-import { environmentAccesses, finding } from "./helpers.js";
+import { Node, SyntaxKind, type Expression, type Identifier, type SourceFile } from "ts-morph";
+import {
+  callableSanitizerPackageNames,
+  htmlParserPackageNames,
+  objectSanitizerPackageNames,
+} from "../../ecosystem/packages.js";
+import type { AuditFile, AuditFinding, AuditRule } from "../rule.js";
+import { callTarget, environmentAccesses, finding } from "./helpers.js";
 
-const defaultSanitizers = ["DOMPurify.sanitize"];
+const htmlParserPackages = new Set<string>(htmlParserPackageNames);
+const objectSanitizerPackages = new Set<string>(objectSanitizerPackageNames);
+const callableSanitizerPackages = new Set<string>(callableSanitizerPackageNames);
+
+interface HtmlBindings {
+  parserFunctions: Set<string>;
+  parserObjects: Set<string>;
+  sanitizerFunctions: Set<string>;
+  sanitizerObjects: Set<string>;
+  configuredSanitizers: Set<string>;
+}
 
 export const secureByDefaultRules: AuditRule[] = [
   {
@@ -13,26 +28,8 @@ export const secureByDefaultRules: AuditRule[] = [
     stacks: ["next", "vite-react"],
     kind: "ast",
     check(context) {
-      const sanitizers = configuredSanitizers(context.ruleOptions);
-
-      return context.files.flatMap((file) => {
-        if (!file.sourceFile) {
-          return [];
-        }
-
-        return file.sourceFile
-          .getDescendantsOfKind(SyntaxKind.JsxAttribute)
-          .filter((attribute) => attribute.getNameNode().getText() === "dangerouslySetInnerHTML")
-          .flatMap((attribute) => {
-            const initializer = attribute.getInitializer();
-            const props = initializer && Node.isJsxExpression(initializer) ? initializer.getExpression() : undefined;
-            const html = props ? resolveHtmlValue(props, new Set()) : undefined;
-
-            return html && isSafeHtmlValue(html, sanitizers, new Set())
-              ? []
-              : [finding(file, "NB-ARCH-011", "unsanitized-html", attribute.getStartLineNumber())];
-          });
-      });
+      const configuredSanitizers = sanitizerTargets(context.ruleOptions);
+      return context.files.flatMap((file) => findUnsafeHtmlSinks(file, configuredSanitizers));
     },
   },
   {
@@ -50,81 +47,232 @@ export const secureByDefaultRules: AuditRule[] = [
   },
 ];
 
-function looksSecret(name: string): boolean {
-  return name.includes("SECRET")
-    || name.includes("TOKEN")
-    || name.includes("PRIVATE")
-    || name.includes("PASSWORD")
-    || name.endsWith("_KEY");
+function findUnsafeHtmlSinks(file: AuditFile, configuredSanitizers: Set<string>): AuditFinding[] {
+  const sourceFile = file.sourceFile;
+  if (!sourceFile) {
+    return [];
+  }
+
+  const bindings = collectHtmlBindings(sourceFile, configuredSanitizers);
+  const findings: AuditFinding[] = [];
+  const reportedStarts = new Set<number>();
+
+  for (const attribute of sourceFile.getDescendantsOfKind(SyntaxKind.JsxAttribute)) {
+    if (attribute.getNameNode().getText() !== "dangerouslySetInnerHTML") {
+      continue;
+    }
+
+    const initializer = attribute.getInitializer();
+    const expression = initializer && Node.isJsxExpression(initializer) ? initializer.getExpression() : undefined;
+    const value = expression ? rawHtmlValue(expression, sourceFile) : undefined;
+    reportIfUnsafe(file, attribute, value, sourceFile, bindings, findings, reportedStarts);
+  }
+
+  for (const spread of sourceFile.getDescendantsOfKind(SyntaxKind.JsxSpreadAttribute)) {
+    const spreadObject = resolveExpression(spread.getExpression(), sourceFile);
+    if (!spreadObject || !Node.isObjectLiteralExpression(spreadObject)) {
+      continue;
+    }
+
+    const property = spreadObject.getProperty("dangerouslySetInnerHTML");
+    if (!property || !Node.isPropertyAssignment(property)) {
+      continue;
+    }
+
+    reportIfUnsafe(
+      file,
+      property,
+      rawHtmlValue(property.getInitializer(), sourceFile),
+      sourceFile,
+      bindings,
+      findings,
+      reportedStarts,
+    );
+  }
+
+  for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    if (isHtmlParserCall(call.getExpression(), bindings)) {
+      reportIfUnsafe(file, call, call.getArguments()[0], sourceFile, bindings, findings, reportedStarts);
+    }
+  }
+
+  return findings;
 }
 
-function configuredSanitizers(options: Record<string, unknown>): Set<string> {
-  const configured = options.sanitizers;
-  const additions = Array.isArray(configured)
-    ? configured.filter((value): value is string => typeof value === "string" && value.length > 0)
-    : [];
+function reportIfUnsafe(
+  file: AuditFile,
+  node: Node,
+  value: Node | undefined,
+  sourceFile: SourceFile,
+  bindings: HtmlBindings,
+  findings: AuditFinding[],
+  reportedStarts: Set<number>,
+): void {
+  if ((value && isSafeHtmlExpression(value, sourceFile, bindings, new Set())) || reportedStarts.has(node.getStart())) {
+    return;
+  }
 
-  return new Set([...defaultSanitizers, ...additions]);
+  reportedStarts.add(node.getStart());
+  findings.push(finding(file, "NB-ARCH-011", "unsanitized-html", node.getStartLineNumber()));
 }
 
-function resolveHtmlValue(expression: Expression, seen: Set<Node>): Expression | undefined {
-  const current = unwrapExpression(expression);
-  if (seen.has(current)) {
+function collectHtmlBindings(sourceFile: SourceFile, configuredSanitizers: Set<string>): HtmlBindings {
+  const bindings: HtmlBindings = {
+    parserFunctions: new Set(),
+    parserObjects: new Set(),
+    sanitizerFunctions: new Set(),
+    sanitizerObjects: new Set(),
+    configuredSanitizers,
+  };
+
+  for (const declaration of sourceFile.getImportDeclarations()) {
+    const moduleName = declaration.getModuleSpecifierValue();
+    const defaultImport = declaration.getDefaultImport()?.getText();
+    const namespaceImport = declaration.getNamespaceImport()?.getText();
+
+    if (htmlParserPackages.has(moduleName)) {
+      if (defaultImport) bindings.parserFunctions.add(defaultImport);
+      if (namespaceImport) bindings.parserObjects.add(namespaceImport);
+    }
+
+    if (objectSanitizerPackages.has(moduleName)) {
+      if (defaultImport) bindings.sanitizerObjects.add(defaultImport);
+      if (namespaceImport) bindings.sanitizerObjects.add(namespaceImport);
+    }
+
+    if (callableSanitizerPackages.has(moduleName)) {
+      if (defaultImport) bindings.sanitizerFunctions.add(defaultImport);
+      if (namespaceImport) bindings.sanitizerFunctions.add(namespaceImport);
+    }
+
+    for (const namedImport of declaration.getNamedImports()) {
+      const importedName = namedImport.getName();
+      const localName = namedImport.getAliasNode()?.getText() ?? importedName;
+
+      if (htmlParserPackages.has(moduleName) && (importedName === "parse" || importedName === "default")) {
+        bindings.parserFunctions.add(localName);
+      }
+      if (objectSanitizerPackages.has(moduleName) && importedName === "sanitize") {
+        bindings.sanitizerFunctions.add(localName);
+      }
+      if (callableSanitizerPackages.has(moduleName)) {
+        bindings.sanitizerFunctions.add(localName);
+      }
+    }
+  }
+
+  return bindings;
+}
+
+function rawHtmlValue(expression: Expression | undefined, sourceFile: SourceFile): Expression | undefined {
+  if (!expression) {
     return undefined;
   }
-  seen.add(current);
 
-  if (Node.isObjectLiteralExpression(current)) {
-    const property = current.getProperty("__html");
-    if (Node.isPropertyAssignment(property)) {
-      return property.getInitializer();
-    }
-    if (Node.isShorthandPropertyAssignment(property)) {
-      return resolveIdentifier(property.getNameNode());
-    }
+  const resolved = resolveExpression(expression, sourceFile);
+  if (!resolved || !Node.isObjectLiteralExpression(resolved)) {
     return undefined;
   }
 
-  if (Node.isIdentifier(current)) {
-    const initializer = resolveIdentifier(current);
-    return initializer ? resolveHtmlValue(initializer, seen) : undefined;
+  const property = resolved.getProperty("__html");
+  if (property && Node.isPropertyAssignment(property)) {
+    return property.getInitializer();
   }
-
+  if (property && Node.isShorthandPropertyAssignment(property)) {
+    return sourceFile.getVariableDeclaration(property.getName())?.getInitializer();
+  }
   return undefined;
 }
 
-function isSafeHtmlValue(expression: Expression, sanitizers: Set<string>, seen: Set<Node>): boolean {
+function resolveExpression(expression: Expression, sourceFile: SourceFile): Expression | undefined {
   const current = unwrapExpression(expression);
-  if (seen.has(current)) {
+  if (!Node.isIdentifier(current)) {
+    return current;
+  }
+
+  return current.getSymbol()?.getDeclarations().find(Node.isVariableDeclaration)?.getInitializer()
+    ?? sourceFile.getVariableDeclaration(current.getText())?.getInitializer()
+    ?? current;
+}
+
+function isSafeHtmlExpression(
+  value: Node,
+  sourceFile: SourceFile,
+  bindings: HtmlBindings,
+  visited: Set<string>,
+): boolean {
+  if (!Node.isExpression(value)) {
     return false;
   }
-  seen.add(current);
 
-  if (Node.isStringLiteral(current) || Node.isNoSubstitutionTemplateLiteral(current)) {
+  const expression = unwrapExpression(value);
+  if (Node.isStringLiteral(expression) || Node.isNoSubstitutionTemplateLiteral(expression)) {
+    return true;
+  }
+  if (Node.isCallExpression(expression)) {
+    return isSanitizerCall(expression.getExpression(), bindings);
+  }
+  if (!Node.isIdentifier(expression)) {
+    return false;
+  }
+
+  const name = expression.getText();
+  if (visited.has(name) || identifierHasWriteBefore(expression)) {
+    return false;
+  }
+  visited.add(name);
+  const initializer = resolveExpression(expression, sourceFile);
+  return initializer && initializer !== expression
+    ? isSafeHtmlExpression(initializer, sourceFile, bindings, visited)
+    : false;
+}
+
+function identifierHasWriteBefore(identifier: Identifier): boolean {
+  return identifier.findReferencesAsNodes().some((reference) =>
+    reference.getSourceFile() === identifier.getSourceFile()
+    && reference.getStart() < identifier.getStart()
+    && isWriteReference(reference),
+  );
+}
+
+function isWriteReference(reference: Node): boolean {
+  const update = reference.getParent();
+  if (
+    update
+    && (Node.isPrefixUnaryExpression(update) || Node.isPostfixUnaryExpression(update))
+    && (update.getOperatorToken() === SyntaxKind.PlusPlusToken || update.getOperatorToken() === SyntaxKind.MinusMinusToken)
+  ) {
     return true;
   }
 
-  if (Node.isCallExpression(current)) {
-    const target = callTarget(current.getExpression());
-    return target !== undefined && sanitizers.has(target);
+  const binary = reference.getFirstAncestorByKind(SyntaxKind.BinaryExpression);
+  if (binary) {
+    const operator = binary.getOperatorToken().getKind();
+    const left = binary.getLeft();
+    if (
+      operator >= SyntaxKind.FirstAssignment
+      && operator <= SyntaxKind.LastAssignment
+      && reference.getStart() >= left.getStart()
+      && reference.getEnd() <= left.getEnd()
+    ) {
+      return true;
+    }
   }
 
-  if (Node.isIdentifier(current)) {
-    const initializer = resolveIdentifier(current);
-    return initializer ? isSafeHtmlValue(initializer, sanitizers, seen) : false;
+  const forIn = reference.getFirstAncestorByKind(SyntaxKind.ForInStatement);
+  if (forIn && reference.getStart() >= forIn.getInitializer().getStart() && reference.getEnd() <= forIn.getInitializer().getEnd()) {
+    return true;
   }
-
-  return false;
-}
-
-function resolveIdentifier(identifier: Identifier): Expression | undefined {
-  const declaration = identifier.getSymbol()?.getDeclarations().find(Node.isVariableDeclaration);
-  return declaration?.getInitializer();
+  const forOf = reference.getFirstAncestorByKind(SyntaxKind.ForOfStatement);
+  return Boolean(
+    forOf
+    && reference.getStart() >= forOf.getInitializer().getStart()
+    && reference.getEnd() <= forOf.getInitializer().getEnd(),
+  );
 }
 
 function unwrapExpression(expression: Expression): Expression {
   let current = expression;
-
   while (
     Node.isParenthesizedExpression(current)
     || Node.isAsExpression(current)
@@ -134,19 +282,44 @@ function unwrapExpression(expression: Expression): Expression {
   ) {
     current = current.getExpression();
   }
-
   return current;
 }
 
-function callTarget(expression: Expression): string | undefined {
-  const current = unwrapExpression(expression);
-  if (Node.isIdentifier(current)) {
-    return current.getText();
+function isHtmlParserCall(expression: Expression, bindings: HtmlBindings): boolean {
+  if (Node.isIdentifier(expression)) {
+    return bindings.parserFunctions.has(expression.getText());
   }
-  if (Node.isPropertyAccessExpression(current)) {
-    const owner = callTarget(current.getExpression());
-    return owner ? `${owner}.${current.getName()}` : undefined;
-  }
+  return Node.isPropertyAccessExpression(expression)
+    && bindings.parserObjects.has(expression.getExpression().getText())
+    && (expression.getName() === "default" || expression.getName() === "parse");
+}
 
-  return undefined;
+function isSanitizerCall(expression: Expression, bindings: HtmlBindings): boolean {
+  const target = callTarget(expression);
+  if (target && bindings.configuredSanitizers.has(target)) {
+    return true;
+  }
+  if (Node.isIdentifier(expression)) {
+    return bindings.sanitizerFunctions.has(expression.getText());
+  }
+  return Node.isPropertyAccessExpression(expression)
+    && bindings.sanitizerObjects.has(expression.getExpression().getText())
+    && expression.getName() === "sanitize";
+}
+
+function sanitizerTargets(options: Record<string, unknown>): Set<string> {
+  const configured = options.sanitizers;
+  return new Set(
+    Array.isArray(configured)
+      ? configured.filter((value): value is string => typeof value === "string" && value.length > 0)
+      : [],
+  );
+}
+
+function looksSecret(name: string): boolean {
+  return name.includes("SECRET")
+    || name.includes("TOKEN")
+    || name.includes("PRIVATE")
+    || name.includes("PASSWORD")
+    || name.endsWith("_KEY");
 }

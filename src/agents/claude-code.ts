@@ -17,6 +17,7 @@ export const claudeCodeAgent: AgentInstaller = {
       "# node-boost",
       "",
       `Use ${context.guidelinesIndexPath} as the generated guidance index.`,
+      `Use ${context.libraryDocsPath} to navigate library documentation for detected versions; prefer its version-matched links over current-only upstream indexes.`,
       `Repo skills are available in ${context.skillsIndexPath} and mirrored to .claude/skills.`,
       `MCP command: ${formatMcpCommand(context.mcpCommand)}.`,
     ].join("\n");

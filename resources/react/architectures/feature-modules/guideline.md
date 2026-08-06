@@ -22,7 +22,7 @@ src/
 
 - Dependency direction is one-way: `shared → features → app`. A feature must never import from `app/**` (rule `NB-ARCH-002`, error). Routes compose features; features do not know about routing entry points.
 - Keep `index.ts` small: export only what other features/routes genuinely need. Everything not exported is private.
-- When two features need the same code, move it down to `lib/` or `components/ui/` — do not import it sideways.
+- When multiple features need the same code, classify it first: shared domain code, infrastructure, and domain-agnostic UI need different established boundaries. Do not make domain code generic merely because it has two consumers.
 - Do not introduce `features/` prematurely. A handful of screens does not need it; adopt this structure when a second feature starts bleeding into the first.
 
 ## Anti-patterns

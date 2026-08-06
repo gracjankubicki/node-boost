@@ -19,13 +19,13 @@ function InvoiceList() {
 
 ## Conventions
 
-- A hook belongs to its feature (`features/<x>/hooks/`); generic ones go to `src/hooks/`.
+- Follow nearby layout. A hook may be feature-local or live in a shared `hooks/` directory; do not introduce a new feature tree only to place one hook.
 - Return an object of named fields when returning more than two values — not a tuple.
 - `useX` only if it calls other hooks. Stateless logic is a plain function in `lib/` — naming it `useX` is a lie.
 
-## React Compiler era (1.0 is stable)
+## Memoization and React Compiler
 
-Do **not** wrap everything in `useCallback`/`useMemo` "for performance" — the compiler memoizes automatically. Reach for them only when you need a referential guarantee (e.g. a value in a `useEffect` dependency array). Ritual memoization is legacy noise; do not generate it.
+Do **not** wrap everything in `useCallback`/`useMemo` "for performance." Reach for them when you need a referential guarantee or measured optimization. React Compiler can automate memoization only when the repository has installed and configured its build integration; React 19 alone is not evidence that it runs.
 
 ## Effects are a last resort
 
@@ -35,4 +35,4 @@ Before writing `useEffect`, check (per react.dev "You Might Not Need an Effect")
 - Reaction to a user event? Handle it in the event handler.
 - Data fetching? That belongs to the data layer / query hooks, not a hand-rolled effect.
 
-Legitimate effects synchronize with external systems (subscriptions, DOM APIs, analytics) — little else.
+Legitimate effects synchronize with external systems (subscriptions, DOM APIs, analytics). Add cleanup, abort stale work, and account for Strict Mode's development setup/cleanup cycle.

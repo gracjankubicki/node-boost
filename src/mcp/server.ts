@@ -7,6 +7,7 @@ import { applicationInfoTool } from "./tools/application-info.js";
 import { auditTool } from "./tools/audit.js";
 import { doctorTool } from "./tools/doctor.js";
 import { explainFindingTool } from "./tools/explain-finding.js";
+import { libraryDocsTool } from "./tools/library-docs.js";
 import { listRoutesTool } from "./tools/list-routes.js";
 
 type ToolOutput = object | unknown[];
@@ -29,6 +30,9 @@ export function createNodeBoostMcpServer(options: NodeBoostMcpServerOptions = {}
     applicationInfoTool(rootDir, packageVersion),
   );
   registerJsonTool(server, "list_routes", "List detected application routes.", async () => listRoutesTool(rootDir));
+  registerJsonTool(server, "library_docs", "Return version-aware documentation routes for detected libraries.", async () =>
+    libraryDocsTool(rootDir),
+  );
   registerJsonTool(server, "doctor", "Run minimal node-boost project diagnostics.", async () => doctorTool(rootDir, packageVersion));
   registerJsonTool(server, "audit", "Run node-boost audit on all source files.", async () => auditTool(rootDir));
   registerJsonTool(

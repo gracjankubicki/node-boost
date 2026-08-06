@@ -23,6 +23,7 @@ export const cursorAgent: AgentInstaller = {
           "# node-boost",
           "",
           `Use ${context.guidelinesIndexPath} as the generated guidance index.`,
+          `Use ${context.libraryDocsPath} to navigate library documentation for detected versions; prefer its version-matched links over current-only upstream indexes.`,
           `Skills are indexed in ${context.skillsIndexPath}.`,
           `MCP command: ${formatMcpCommand(context.mcpCommand)}.`,
           "",

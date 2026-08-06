@@ -1,7 +1,7 @@
 # TypeScript Core
 
 - `strict: true` is the floor; treat compiler errors as design feedback, not noise to cast away.
-- No `any` and no `as` on external data — `unknown` + narrowing, or a zod parse at the boundary (see typed-contracts and modern-typescript guidelines).
-- Model closed sets as discriminated unions or const objects (never `enum`); make switches exhaustive with a `never` check.
-- Derive types instead of duplicating them: `z.infer`, `ReturnType`, `Pick`/`Omit`, `satisfies` for literal checking.
-- Types live next to their domain (feature's `types.ts`); shared primitives (branded IDs) in `lib/`.
+- Avoid `any` and unjustified casts on external data—use `unknown` + narrowing or the installed runtime schema (see typed-contracts and modern-typescript).
+- Model new local closed sets with discriminated unions/const objects where useful; preserve established or generated enums unless a coordinated migration has a concrete benefit.
+- Derive types instead of duplicating them through the installed schema library, `ReturnType`, `Pick`/`Omit`, and `satisfies`.
+- Colocate types with their domain using the repository's established layout. Brand only high-risk, easily confused values with a safe construction boundary.

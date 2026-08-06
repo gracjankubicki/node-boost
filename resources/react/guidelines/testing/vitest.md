@@ -1,8 +1,8 @@
 # Vitest
 
-- Runner for unit and component tests; component tests use Testing Library + `@testing-library/jest-dom` matchers in a jsdom (or browser-mode) environment.
-- Test behavior through roles/labels; mock the network with MSW, never your own hooks/modules under test (see testing-strategy guideline).
+- Runner for unit and component tests; component tests use Testing Library + `@testing-library/jest-dom` matchers only when those packages and a DOM environment are configured.
+- Test behavior through roles/labels when Testing Library is installed. Use MSW when present; otherwise follow the repository's established network seam.
 - Structure: `describe` per unit/feature, test names state observable behavior ("shows validation error when amount is empty").
-- Use `vi.fn()`/`vi.spyOn` for collaborator seams; avoid `vi.mock` of internal modules — it usually signals a missing seam.
+- Use `vi.fn()`/`vi.spyOn()` for collaborator seams. Focused `vi.mock()` usage can be appropriate for a deliberate unit boundary; restore mocks between tests.
 - Keep tests deterministic: fake timers for time-dependent logic (`vi.useFakeTimers`), no real network, no ordering dependence.
-- Run a focused file with `vitest run <path>`; the full gate is the project's `npm test`.
+- Run focused and full tests through the repository's documented package-manager command or wrapper. Do not assume `npm test`; some projects require Yarn, pnpm, Make targets, code generation, or i18n compilation first.

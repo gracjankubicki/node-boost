@@ -31,6 +31,28 @@ describe("audit edge cases", () => {
     });
   });
 
+  it("does not treat awaiting Next route params as remote data", async () => {
+    await withProject(async (projectRoot) => {
+      const path = "src/app/reports/page.tsx";
+      await writeSource(
+        projectRoot,
+        path,
+        "export default async function Page({ params }: { params: Promise<{ id: string }> }) { const { id } = await params; return <div>{id}</div>; }",
+      );
+
+      const paramsOnly = await runAudit({ rootDir: projectRoot, mode: "all" });
+      expect(paramsOnly.findings).not.toContainEqual(expect.objectContaining({ rule: "NB-ARCH-010", file: path }));
+
+      await writeSource(
+        projectRoot,
+        path,
+        "export default async function Page() { const report = await getReport(); return <div>{report.id}</div>; }",
+      );
+      const remoteRead = await runAudit({ rootDir: projectRoot, mode: "all" });
+      expect(remoteRead.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-010", file: path }));
+    });
+  });
+
   it("recognizes schema parse calls structurally", async () => {
     await withProject(async (projectRoot) => {
       const path = "src/lib/api/client.ts";
@@ -44,6 +66,91 @@ describe("audit edge cases", () => {
     });
   });
 
+  it("does not accept an unused validation result or an unrelated parser", async () => {
+    await withProject(async (projectRoot) => {
+      const path = "src/lib/api/client.ts";
+      await writeSource(
+        projectRoot,
+        path,
+        [
+          "export async function load(response: Response) {",
+          "  const raw = await response.json();",
+          "  schema.safeParse(raw);",
+          "  parser.parse(raw);",
+          "  return raw;",
+          "}",
+        ].join("\n"),
+      );
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+
+      expect(result.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-007", file: path, line: 2 }));
+    });
+  });
+
+  it("requires the boundary value to flow directly through a used validator result", async () => {
+    await withProject(async (projectRoot) => {
+      const path = "src/lib/api/client.ts";
+      const unsafeSources = [
+        [
+          "export async function load(response: Response, other: unknown) {",
+          "  const raw = await response.json();",
+          "  const validated = schema.parse({ ...raw, other });",
+          "  return validated;",
+          "}",
+        ],
+        [
+          "export async function load(response: Response) {",
+          "  const raw = await response.json();",
+          "  function validate() { return schema.parse(raw); }",
+          "  return raw;",
+          "}",
+        ],
+        [
+          "export async function load(response: Response) {",
+          "  const raw = await response.json();",
+          "  const validated = schema.parse(raw);",
+          "  void validated;",
+          "  return raw;",
+          "}",
+        ],
+        [
+          "export async function load(response: Response, other: unknown) {",
+          "  return schema.parse({ ...(await response.json()), other });",
+          "}",
+        ],
+        [
+          "export async function load(response: Response) {",
+          "  const raw = await response.json();",
+          "  consume(raw);",
+          "  const validated = schema.parse(raw);",
+          "  return validated;",
+          "}",
+        ],
+      ];
+
+      for (const source of unsafeSources) {
+        await writeSource(projectRoot, path, source.join("\n"));
+        const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+        expect(result.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-007", file: path }));
+      }
+
+      await writeSource(
+        projectRoot,
+        path,
+        [
+          "export async function load(response: Response) {",
+          "  const raw = await response.json();",
+          "  const validated = schema.parse(raw);",
+          "  return validated;",
+          "}",
+        ].join("\n"),
+      );
+      const validated = await runAudit({ rootDir: projectRoot, mode: "all" });
+      expect(validated.findings).not.toContainEqual(expect.objectContaining({ rule: "NB-ARCH-007", file: path }));
+    });
+  });
+
   it("distinguishes real network calls from comments and strings", async () => {
     await withProject(async (projectRoot) => {
       const path = "src/components/Widget.tsx";
@@ -54,6 +161,20 @@ describe("audit edge cases", () => {
       await writeSource(projectRoot, path, '"use client";\nexport function Widget() { fetch("/api"); return null; }');
       const called = await runAudit({ rootDir: projectRoot, mode: "all" });
       expect(called.findings).toContainEqual(expect.objectContaining({ rule: "NB-ARCH-005", file: path, line: 2 }));
+    });
+  });
+
+  it("recognizes SWR hook files as the client data layer", async () => {
+    await withProject(async (projectRoot) => {
+      const path = "src/hooks/useInvoices.ts";
+      await writeSource(
+        projectRoot,
+        path,
+        '"use client";\nexport function useInvoices() { return useSWR("/api/invoices", () => fetch("/api/invoices")); }',
+      );
+
+      const result = await runAudit({ rootDir: projectRoot, mode: "all" });
+      expect(result.findings).not.toContainEqual(expect.objectContaining({ rule: "NB-ARCH-005", file: path }));
     });
   });
 

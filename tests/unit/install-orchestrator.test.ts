@@ -33,6 +33,7 @@ describe("install orchestrator", () => {
       expect(afterSecond).toEqual(afterFirst);
 
       await expectPath(projectRoot, ".ai/guidelines/node-boost.md");
+      await expectPath(projectRoot, ".ai/docs/llms.txt");
       await expectPath(projectRoot, ".ai/skills/react-development/SKILL.md");
       await expectPath(projectRoot, ".agents/skills/react-development/SKILL.md");
       await expectPath(projectRoot, ".claude/skills/react-development/SKILL.md");
@@ -125,20 +126,20 @@ describe("install orchestrator", () => {
   it("removes stale owned resources and converges on the second update", async () => {
     await withFixture("next-app", async (projectRoot) => {
       await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
-      await removeArchitecture(projectRoot, "feature-modules");
+      await removeArchitecture(projectRoot, "modern-typescript");
 
       const beforeUpdate = await doctorTool(projectRoot, "0.1.0");
       expect(beforeUpdate.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "fail" }));
 
       const first = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
       expect(first.operations).toContainEqual(expect.objectContaining({
-        path: ".ai/guidelines/architectures/feature-modules.md",
+        path: ".ai/guidelines/architectures/modern-typescript.md",
         status: "deleted",
       }));
-      await expect(readFile(join(projectRoot, ".ai/guidelines/architectures/feature-modules.md"), "utf8")).rejects.toThrow();
-      await expect(readFile(join(projectRoot, ".ai/skills/feature-modules/SKILL.md"), "utf8")).rejects.toThrow();
-      await expect(readFile(join(projectRoot, ".agents/skills/feature-modules/SKILL.md"), "utf8")).rejects.toThrow();
-      await expect(readFile(join(projectRoot, ".claude/skills/feature-modules/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".ai/guidelines/architectures/modern-typescript.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".ai/skills/modern-typescript/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".agents/skills/modern-typescript/SKILL.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(projectRoot, ".claude/skills/modern-typescript/SKILL.md"), "utf8")).rejects.toThrow();
 
       const second = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
       expect(second.operations.every((operation) => operation.status === "skipped")).toBe(true);
@@ -148,11 +149,11 @@ describe("install orchestrator", () => {
   it("preserves modified owned and never-owned files with a conflict", async () => {
     await withFixture("next-app", async (projectRoot) => {
       await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
-      const modifiedPath = ".ai/guidelines/architectures/feature-modules.md";
+      const modifiedPath = ".ai/guidelines/architectures/modern-typescript.md";
       const customPath = ".ai/guidelines/my-team.md";
       await writeFile(join(projectRoot, modifiedPath), "# My edited guidance\n", "utf8");
       await writeFile(join(projectRoot, customPath), "# Never owned\n", "utf8");
-      await removeArchitecture(projectRoot, "feature-modules");
+      await removeArchitecture(projectRoot, "modern-typescript");
 
       const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
 
@@ -170,9 +171,9 @@ describe("install orchestrator", () => {
   it("migrates without a manifest conservatively", async () => {
     await withFixture("next-app", async (projectRoot) => {
       await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
-      const stalePath = ".ai/guidelines/architectures/feature-modules.md";
+      const stalePath = ".ai/guidelines/architectures/modern-typescript.md";
       await rm(join(projectRoot, ".node-boost/generated-manifest.json"));
-      await removeArchitecture(projectRoot, "feature-modules");
+      await removeArchitecture(projectRoot, "modern-typescript");
 
       const result = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
 
@@ -326,8 +327,10 @@ describe("install orchestrator", () => {
 
       expect(claude).toContain("before claude\n\nafter claude");
       expect(claude).toContain("<!-- node-boost:start -->");
+      expect(claude).toContain(".ai/docs/llms.txt");
       expect(agents).toContain("before agents\n\nafter agents");
       expect(agents).toContain(".agents/skills");
+      expect(agents).toContain(".ai/docs/llms.txt");
       expect(mcpJson.mcpServers.other).toEqual({ command: "other", args: ["serve"] });
       expect(mcpJson.mcpServers["node-boost"]).toEqual({ command: "npm", args: ["exec", "--", "node-boost", "mcp"] });
       expect(codexToml).toContain("[mcp_servers.other]");
@@ -335,8 +338,22 @@ describe("install orchestrator", () => {
     });
   });
 
-  it("uses feature-modules forbid variant and writes object config", async () => {
+  it("does not impose feature modules on a project without a feature tree", async () => {
     await withFixture("next-app", async (projectRoot) => {
+      await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+
+      const config = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
+        architectures: unknown[];
+      };
+      expect(config.architectures).not.toContain("feature-modules");
+      expect(config.architectures).not.toContainEqual(expect.objectContaining({ name: "feature-modules" }));
+      await expect(readFile(join(projectRoot, ".ai/guidelines/architectures/feature-modules.md"), "utf8")).rejects.toThrow();
+    });
+  });
+
+  it("infers a public-api boundary for an established feature tree", async () => {
+    await withFixture("next-app", async (projectRoot) => {
+      await mkdir(join(projectRoot, "src", "features", "invoices"), { recursive: true });
       await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
 
       const config = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
@@ -344,8 +361,8 @@ describe("install orchestrator", () => {
       };
       const guideline = await readFile(join(projectRoot, ".ai/guidelines/architectures/feature-modules.md"), "utf8");
 
-      expect(config.architectures).toContainEqual({ name: "feature-modules", boundary: "forbid" });
-      expect(guideline).toContain("# Feature Modules (forbid boundary)");
+      expect(config.architectures).toContainEqual({ name: "feature-modules", boundary: "public-api" });
+      expect(guideline).toContain("# Feature Modules (public-api boundary)");
     });
   });
 

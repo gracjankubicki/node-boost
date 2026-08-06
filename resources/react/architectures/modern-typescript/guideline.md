@@ -1,6 +1,6 @@
 # Modern TypeScript
 
-The language contract for this codebase: strict compiler, no `any`, closed sets as unions, IDs as branded types.
+The language contract for this codebase: strict compiler, precise types, safe narrowing, and domain modeling proportionate to risk.
 
 ## Compiler
 
@@ -8,7 +8,7 @@ The language contract for this codebase: strict compiler, no `any`, closed sets 
 
 ## No `any` — narrow `unknown`
 
-`any` switches the type checker off at every use site (`NB-ARCH-014`, warn). For data of unknown shape use `unknown` and narrow with guards or parse with zod (typed-contracts). Casting external data with `as` is the same lie with better manners.
+`any` switches the type checker off at every use site (`NB-ARCH-014`, warn). For unknown data use `unknown` and narrow with guards or the installed schema library (typed-contracts). A cast does not validate external data; keep necessary DOM/library-boundary casts narrow and local. Generated output, declarations, and tests are excluded from the rule.
 
 ## Closed sets: discriminated unions + exhaustiveness
 
@@ -29,7 +29,7 @@ function label(state: PaymentState): string {
 // Adding { kind: "refunded" } breaks the build HERE — every switch is found for you.
 </code-snippet>
 
-Do not use TS `enum` — runtime quirks, poor tree-shaking. Closed value sets are const objects: `const Role = { admin: "admin", user: "user" } as const; type Role = keyof typeof Role`.
+For new local APIs, literal unions or const objects often produce simpler emitted code. Preserve established domain enums and generated contracts unless a coordinated migration has a concrete compatibility or maintenance benefit.
 
 ## Branded types for identifiers
 
@@ -39,7 +39,7 @@ type InvoiceId = string & { readonly __brand: "InvoiceId" }
 // payInvoice(userId, invoiceId) with swapped args → compile error, not a prod bug
 </code-snippet>
 
-Zero runtime cost — compile-time value objects. Use for IDs and easily-confused scalars (amounts, emails).
+Brands have zero runtime cost but add construction and interoperability overhead. Use them for high-risk, easily confused values when the repository already has—or explicitly adopts—a safe boundary; do not brand every identifier by default.
 
 ## Also
 

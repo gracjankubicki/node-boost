@@ -11,14 +11,14 @@ Use when adding a new feature, deciding where a new file belongs, or resolving a
 
 ## Creating a feature
 
-1. Create `src/features/<name>/` with only the folders you need (`api/`, `components/`, `hooks/`, `types.ts`).
+1. Confirm this repository has adopted feature modules and discover its actual feature root. Create `<feature-root>/<name>/` with only the folders its nearby features use.
 2. Add `index.ts` exporting the minimal public surface.
-3. Wire it into a route in `app/` — routes compose features, never the other way around.
+3. Wire it into the repository's route/composition layer (Next `app/`, a React Router config/screen, or another documented entry). That layer composes features, never the other way around.
 
 ## Deciding where code goes
 
 - Used by one feature → inside that feature.
-- Used by two or more features → `lib/` (logic) or `components/ui/` (domain-agnostic UI).
+- Used by multiple features → decide whether it is shared domain code, infrastructure, or domain-agnostic UI; move it to the matching established shared boundary, not automatically to `lib/` or `components/ui/`.
 - Needs another feature's UI + data on one screen → compose in the route, pass props.
 
 ## Fixing boundary violations

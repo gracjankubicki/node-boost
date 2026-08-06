@@ -1,19 +1,19 @@
 ---
 name: ui-states
-description: Build the full four-state contract (loading, error, empty, happy) for data views, with skeletons, designed empty states and React 19 optimistic updates.
+description: Design relevant loading, error, empty, and happy states for remote-data views and safe mutation feedback.
 ---
 
 # UI States
 
 ## When to use this skill
 
-Use when building any view that renders remote data, or when adding a mutation with user-visible feedback.
+Use when building a meaningful remote-data view or adding a mutation with user-visible feedback. Static/presentational components do not need four artificial branches.
 
 ## Procedure
 
-1. Scaffold all four branches up front: loading (skeleton mirroring content), error (message + retry), empty (why + CTA), happy.
-2. Empty state: decide which case it is — no data yet (onboarding CTA) vs. no results for filters (keep filters visible, offer clear).
-3. Use shared `EmptyState`/`ErrorState` from `components/ui/`; extend them with slots rather than forking per feature.
-4. Mutations: high-confidence, reversible → `useOptimistic`; forms → `useActionState` for pending/error; payments/irreversible → explicit pending state, no optimism.
-5. Next App Router: page-level loading/error live in `loading.tsx`/`error.tsx`; this skill covers the *content* of those fallbacks.
-6. Add tests for the loading/error/empty branches (MSW scenarios), not just the happy path.
+1. For each applicable state, design loading (stable layout), error (message + retry when useful), empty (why + next step), and happy behavior.
+2. Distinguish no data yet from no filtered results; preserve filters and offer clear/reset for the latter.
+3. Reuse the repository's established empty/error primitives when they exist; do not invent `components/ui` solely to satisfy this skill.
+4. Match the installed mutation stack. Query/SWR optimistic cache updates work across supported React versions. React 19 `useOptimistic` is optional and its setter must run inside an Action or Transition. Irreversible operations use explicit pending/confirmation, not optimism.
+5. Next App Router route-level fallbacks live in `loading.tsx`/`error.tsx`; use component-level states for interactive/cache-driven regions.
+6. Test applicable states with the installed runner and mocking approach. Adding MSW or an E2E runner is a separate explicit toolchain decision.

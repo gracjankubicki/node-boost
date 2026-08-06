@@ -1,6 +1,6 @@
 import type { ArchitectureSlug, DetectedStack, StackAdapter } from "../types.js";
 import { hasPackage } from "./adapter.js";
-import { commonArchitectures, sortArchitectures, tailwindArchitecture } from "./architectures.js";
+import { commonArchitectures, inferredCommonArchitectures, sortArchitectures, tailwindArchitecture } from "./architectures.js";
 
 export const viteReactStackAdapter: StackAdapter = {
   name: "vite-react",
@@ -18,6 +18,16 @@ export const viteReactStackAdapter: StackAdapter = {
     return sortArchitectures(architectures);
   },
   recommendedArchitectures(stack: DetectedStack): ArchitectureSlug[] {
-    return this.applicableArchitectures(stack);
+    const architectures = inferredCommonArchitectures(stack);
+
+    if (hasPackage(stack, "@tanstack/react-query") || hasPackage(stack, "react-query-kit") || hasPackage(stack, "swr")) {
+      architectures.push("data-access-layer");
+    }
+
+    if (hasPackage(stack, "tailwindcss")) {
+      architectures.push(tailwindArchitecture);
+    }
+
+    return sortArchitectures([...new Set(architectures)]);
   },
 };

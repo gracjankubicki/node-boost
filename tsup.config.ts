@@ -21,6 +21,7 @@ export default defineConfig([
     sourcemap: true,
     target: "node20",
     external,
+    noExternal: ["@modelcontextprotocol/sdk"],
     banner: {
       js: "#!/usr/bin/env node",
     },

@@ -4,7 +4,7 @@ Classify state before placing it. Each kind has exactly one correct home; most b
 
 | Kind | Example | Home |
 |---|---|---|
-| Server state | invoices, users | react-query cache (or RSC props in Next) |
+| Server state | invoices, users | installed server cache (Query/SWR) or RSC props |
 | Local UI state | open modal, input value | `useState` in the component |
 | Shared client state | theme, sidebar, multi-step draft | Context (rare updates) / store like zustand (frequent) |
 | URL state | filters, pagination, active tab | `searchParams` |
@@ -17,7 +17,7 @@ const invoices = await api.getInvoices()
 useInvoiceStore.setState({ invoices })
 </code-snippet>
 
-react-query already is the store for server data: keys, staleness, refetch, `invalidateQueries` after mutations. A client store holds only what the backend does not know (preferences, drafts, selections).
+The installed server-state mechanism already owns keys, freshness, refetch, and mutation updates. Use TanStack Query/react-query-kit, SWR, RSC, or the repository's custom boundary as detected; do not introduce a second cache library. A client store holds only what the backend does not know (preferences, drafts, selections).
 
 ## Escalation ladder
 
@@ -25,7 +25,7 @@ react-query already is the store for server data: keys, staleness, refetch, `inv
 
 ## Next specifics
 
-Server Components remove the need for much client state — data arriving as props needs no client cache. Keep react-query for interactive islands, not for whole server-rendered pages.
+Server Components remove the need for much client state—data arriving as props needs no client cache. Use a client cache only for interactive regions that need it and follow the library already installed.
 
 ## Anti-patterns
 

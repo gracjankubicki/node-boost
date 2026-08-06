@@ -1,13 +1,13 @@
 # Node Boost Core
 
-Baseline for AI-assisted work in this repository. Guidelines in `.ai/guidelines/` are composed from the packages actually installed — trust them over training-data habits, which are often a major version stale.
+Baseline for AI-assisted work in this repository. Package guidelines are composed from detected dependencies; architecture guidelines are explicitly selected or inferred from concrete capabilities. Local `AGENTS.md`, README instructions, scripts, and nearby code remain authoritative project conventions.
 
 ## Working rules
 
-- Match the project's detected stack and versions (see the `application_info` MCP tool) before writing code; version-specific guidelines override generic knowledge.
+- Read local instructions and package scripts, then match the detected stack and versions (use `application_info` when Node Boost is installed). Version-specific guidelines override generic knowledge, but a framework version alone does not prove that an optional compiler or feature flag is enabled.
 - Follow the enabled architecture guidelines (indexed in `node-boost.md`); the `audit`/`guard` commands enforce their rules (`NB-ARCH-xxx`). Use `explain <ID>` when a finding is unclear.
 - Suppressing a finding requires a reason: `// nb-disable NB-ARCH-xxx -- <why>`. Unreasoned suppressions are flagged.
-- After completing changes, run `node-boost audit --changed` (or rely on the installed Stop hook) and fix findings before handing back.
+- After completing changes, use the repository's documented validation commands. When Node Boost is installed, also run `node-boost audit --changed` (or rely on its Stop hook).
 
 ## Repository hygiene
 

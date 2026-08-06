@@ -1,13 +1,13 @@
 # Typed Contracts
 
-TypeScript types do not exist at runtime. Validate external data at the system's boundaries with zod, infer types from schemas, and trust types everywhere inside.
+TypeScript types do not exist at runtime. Validate external data at system boundaries with the schema library already used by the repository (for example Zod or Valibot), derive types where that library supports it, and trust values only after parsing.
 
-## The boundaries (validate here, and only here)
+## Validate at the boundary
 
-1. **API responses** — in the data layer: `invoiceListSchema.parse(await res.json())`. Exception: a generated client (orval/openapi-typescript) already carries the contract — do not double-validate.
-2. **User input** — forms (react-hook-form + zod resolver) and every Server Action (validate the payload first; a Server Action is a public endpoint).
-3. **Environment variables** — a single `env.ts` with a schema; crash at startup, not mid-request (`NB-ARCH-008`, warn, flags `process.env.X` elsewhere).
-4. **URL params** — `searchParams` are untrusted input like any query string.
+1. **API responses**—parse untrusted success payloads and relevant error envelopes in the data layer. Generated TypeScript clients do not make runtime JSON trustworthy. Generated runtime schemas are useful only when the application actually invokes them.
+2. **User input**—validate through the established form integration and again at every server endpoint; handle coercion explicitly.
+3. **Environment variables**—centralize them in a validated env module (`NB-ARCH-008`).
+4. **URL params/search state**—parse them as untrusted strings, including through an installed URL-state library such as `nuqs`.
 
 <code-snippet name="Schema as single source of truth" lang="ts">
 export const invoiceSchema = z.object({
@@ -15,17 +15,15 @@ export const invoiceSchema = z.object({
   amount: z.number(),
   status: z.enum(["draft", "paid", "void"]),
 })
-export type Invoice = z.infer<typeof invoiceSchema> // type derives from schema — no duplication
+export type Invoice = z.infer<typeof invoiceSchema>
 </code-snippet>
+
+The snippet uses Zod; use the equivalent Valibot or project-specific schema when that is the established dependency.
 
 ## Rules
 
-- Never `as Invoice` on external data — a cast is a promise the runtime never checks. Parse it (`NB-ARCH-007`, warn, flags unvalidated `res.json()`/`JSON.parse` in the data layer).
-- One schema per contract; derive narrower views with `.pick()`/`.omit()` instead of re-declaring.
-- Form UX: validate on blur for fields, on submit for the whole form; reserve layout space for the error message so the layout does not jump.
-
-## Anti-patterns
-
-- **Zod fatigue**: re-parsing the same data in every component. Validate at the boundary; inside the app the type is the truth.
-- Hand-written interfaces duplicating a schema (they drift apart silently).
-- Mind the zod major in this project — zod 4 changed APIs (`z.email()` top-level, reworked error customization); follow the versioned zod guideline.
+- Do not cast external data to its hoped-for type. Parse it (`NB-ARCH-007` flags raw JSON boundaries in configured data-layer paths).
+- Generated files are excluded, but manual endpoints and wrappers remain audited even when Orval/openapi-typescript is installed.
+- If runtime validation is centralized in a project helper, list its imported function name under `NB-ARCH-007`'s `runtimeValidatorFunctions` rule option; arbitrary function names are not trusted automatically.
+- Define whether validation is fail-closed or fail-open with telemetry. A validator that only logs and returns original data is observability, not enforcement.
+- Avoid duplicate schemas for the same contract; compose or derive narrower views with the installed library.

@@ -12,6 +12,7 @@ export interface FileOperation {
 
 export interface AgentRenderContext {
   guidelinesIndexPath: string;
+  libraryDocsPath: string;
   skillsIndexPath: string;
   selectedSkills: ResourceSelection[];
   existingContent: (path: string) => string | null;
