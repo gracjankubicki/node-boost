@@ -35,6 +35,10 @@ try {
     "THIRD_PARTY_NOTICES.md",
     "resources/react/guidelines/core.md",
     "resources/react/skills/react-development/SKILL.md",
+    "resources/stacks/astro/guidelines/core.md",
+    "resources/stacks/astro/skills/astro-development/SKILL.md",
+    "resources/frameworks/react/guidelines/core.md",
+    "resources/frameworks/react/skills/development/SKILL.md",
   ];
   const packedPaths = new Set(packed.files.map((file) => file.path));
   for (const path of requiredFiles) {
@@ -81,14 +85,40 @@ try {
     throw new Error("Packed consumers must use the bundled MCP runtime instead of installing the full SDK tree.");
   }
 
-  await mkdir(join(consumerRoot, "src"), { recursive: true });
+  await mkdir(join(consumerRoot, "src", "components"), { recursive: true });
+  await mkdir(join(consumerRoot, "src", "pages"), { recursive: true });
   await writeFile(
     join(consumerRoot, "package.json"),
-    `${JSON.stringify({ private: true, dependencies: { react: "^19.0.0" }, devDependencies: { vite: "^6.0.0", typescript: "^5.9.3" } }, null, 2)}\n`,
+    `${JSON.stringify({
+      private: true,
+      type: "module",
+      scripts: { check: "astro check" },
+      dependencies: {
+        astro: "^7.2.9",
+        "@astrojs/react": "^6.0.4",
+        react: "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      devDependencies: { typescript: "^5.9.3" },
+    }, null, 2)}\n`,
     "utf8",
   );
   await writeFile(join(consumerRoot, "tsconfig.json"), '{ "compilerOptions": { "strict": true, "jsx": "react-jsx" } }\n', "utf8");
-  await writeFile(join(consumerRoot, "src", "main.tsx"), "export const App = () => <main>packed consumer</main>;\n", "utf8");
+  await writeFile(
+    join(consumerRoot, "astro.config.mjs"),
+    'import { defineConfig } from "astro/config";\nimport react from "@astrojs/react";\nexport default defineConfig({ integrations: [react()] });\n',
+    "utf8",
+  );
+  await writeFile(
+    join(consumerRoot, "src", "components", "Counter.tsx"),
+    "export function Counter() { return <button type=\"button\">packed consumer</button>; }\n",
+    "utf8",
+  );
+  await writeFile(
+    join(consumerRoot, "src", "pages", "index.astro"),
+    '---\nimport { Counter } from "../components/Counter";\n---\n<main><Counter client:idle /></main>\n',
+    "utf8",
+  );
   await run("npm", ["install", "--ignore-scripts", tarball], consumerRoot);
   await run("npm", ["audit", "--omit=dev", "--audit-level=low"], consumerRoot);
 
@@ -143,6 +173,10 @@ try {
     throw new Error("Packed consumer doctor did not pass.");
   }
   await access(join(consumerRoot, ".ai", "node-boost.schema.json"));
+  await access(join(consumerRoot, ".ai", "guidelines", "astro", "core.md"));
+  await access(join(consumerRoot, ".ai", "guidelines", "frameworks", "react", "core.md"));
+  await access(join(consumerRoot, ".ai", "skills", "astro", "astro-development", "SKILL.md"));
+  await access(join(consumerRoot, ".ai", "skills", "frameworks", "react", "development", "SKILL.md"));
 
   process.stdout.write(`pack smoke passed: ${packed.filename}; ${requiredFiles.join(", ")}\n`);
 } finally {

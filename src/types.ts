@@ -7,7 +7,7 @@ export interface PackageManagerInfo {
   source: "lockfile" | "packageManagerField" | "default";
 }
 
-export type StackName = "next" | "vite-react" | "react-generic" | "unknown";
+export type StackName = "next" | "vite-react" | "astro" | "react-generic" | "unknown";
 
 export type RouterKind = "app" | "pages" | "react-router" | "none" | "unknown";
 
@@ -26,6 +26,36 @@ export interface DetectedCapabilities {
   nextCacheComponents: boolean;
 }
 
+export type AstroOutputMode = "static" | "server";
+
+export type AstroRenderingMode = "static-first" | "server-first" | "mixed";
+
+export type AstroContentMode = "none" | "build" | "live";
+
+export type AstroUiIntegration = "react" | "preact" | "vue" | "svelte" | "solid" | "lit";
+
+export interface AstroProjectProfile {
+  version: string | null;
+  major: number | null;
+  output: AstroOutputMode;
+  rendering: AstroRenderingMode;
+  adapter: string | null;
+  uiIntegrations: AstroUiIntegration[];
+  mdx: boolean;
+  contentCollections: AstroContentMode;
+  actions: boolean;
+  middleware: boolean;
+  sessions: boolean;
+  routeCache: boolean;
+  i18n: boolean;
+  advancedRouting: boolean;
+  clientIslands: boolean;
+  serverIslands: boolean;
+  htmlInjection: boolean;
+  endpoints: boolean;
+  testTools: string[];
+}
+
 export interface DetectedStack {
   rootDir: string;
   name: StackName;
@@ -35,6 +65,7 @@ export interface DetectedStack {
   packageManager: PackageManagerInfo;
   packages: Record<string, PackageInfo>;
   capabilities: DetectedCapabilities;
+  astro: AstroProjectProfile | null;
   warnings: string[];
 }
 
@@ -55,16 +86,24 @@ export type ArchitectureSlug =
   | "error-loading-boundaries"
   | "secure-by-default"
   | "modern-typescript"
-  | "ui-states";
+  | "ui-states"
+  | "islands-architecture"
+  | "rendering-strategy"
+  | "content-modeling"
+  | "request-boundaries"
+  | "multi-framework-boundaries";
 
 export type FeatureModulesBoundary = "public-api" | "forbid";
+
+export type RenderingStrategyVariant = AstroRenderingMode;
 
 export type ArchitectureConfigEntry =
   | ArchitectureSlug
   | `${string}:${string}`
   | { name: "feature-modules"; boundary?: FeatureModulesBoundary }
+  | { name: "rendering-strategy"; variant?: RenderingStrategyVariant }
   | {
-      name: Exclude<ArchitectureSlug, "feature-modules">;
+      name: Exclude<ArchitectureSlug, "feature-modules" | "rendering-strategy">;
     }
   | { name: `${string}:${string}`; variant?: string };
 

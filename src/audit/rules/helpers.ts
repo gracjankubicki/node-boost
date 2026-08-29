@@ -80,6 +80,10 @@ export function finding(file: AuditFile, rule: string, code: string, line: numbe
   };
 }
 
+export function sourceLineNumber(file: AuditFile, line: number): number {
+  return line + (file.astro?.frontmatterLineOffset ?? 0);
+}
+
 export function isConfigFile(path: string): boolean {
   const parts = basename(path).split(".");
   const extension = parts.at(-1) ?? "";
@@ -141,10 +145,19 @@ export function environmentAccesses(file: AuditFile): Array<{ name: string; line
     const name = access.getName();
     return [{
       name,
-      line: access.getStartLineNumber(),
-      public: name.startsWith("NEXT_PUBLIC_") || name.startsWith("VITE_"),
+      line: sourceLineNumber(file, access.getStartLineNumber()),
+      public: name.startsWith("NEXT_PUBLIC_") || name.startsWith("VITE_") || name.startsWith("PUBLIC_"),
     }];
-  });
+  }).concat(file.sourceFile.getImportDeclarations().flatMap((declaration) => {
+    if (declaration.getModuleSpecifierValue() !== "astro:env/client") {
+      return [];
+    }
+    return declaration.getNamedImports().map((namedImport) => ({
+      name: namedImport.getName(),
+      line: sourceLineNumber(file, namedImport.getStartLineNumber()),
+      public: true,
+    }));
+  }));
 }
 
 export function splitTextLines(content: string): string[] {

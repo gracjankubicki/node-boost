@@ -1,0 +1,16 @@
+---
+import Personalized from "../components/Personalized.astro";
+
+const cart = await Astro.session?.get("cart");
+if (Astro.cache.enabled) {
+  Astro.cache.set({ maxAge: 300, swr: 60, tags: ["home"] });
+}
+---
+
+<main>
+  <h1>Server Astro fixture</h1>
+  <p>Cart items: {Array.isArray(cart) ? cart.length : 0}</p>
+  <Personalized server:defer>
+    <span slot="fallback">Loading account details...</span>
+  </Personalized>
+</main>

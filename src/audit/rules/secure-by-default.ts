@@ -1,4 +1,4 @@
-import { Node, SyntaxKind, type Expression, type Identifier, type SourceFile } from "ts-morph";
+import { Node, Project, ScriptKind, SyntaxKind, type Expression, type Identifier, type SourceFile } from "ts-morph";
 import {
   callableSanitizerPackageNames,
   htmlParserPackageNames,
@@ -25,11 +25,13 @@ export const secureByDefaultRules: AuditRule[] = [
     code: "unsanitized-html",
     architecture: "secure-by-default",
     defaultSeverity: "err",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       const configuredSanitizers = sanitizerTargets(context.ruleOptions);
-      return context.files.flatMap((file) => findUnsafeHtmlSinks(file, configuredSanitizers));
+      return context.files.flatMap((file) => file.astro
+        ? findUnsafeAstroHtmlSinks(file, configuredSanitizers)
+        : findUnsafeHtmlSinks(file, configuredSanitizers));
     },
   },
   {
@@ -37,7 +39,7 @@ export const secureByDefaultRules: AuditRule[] = [
     code: "public-env-secret-name",
     architecture: "secure-by-default",
     defaultSeverity: "warn",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       return context.files.flatMap((file) => environmentAccesses(file)
@@ -46,6 +48,69 @@ export const secureByDefaultRules: AuditRule[] = [
     },
   },
 ];
+
+function findUnsafeAstroHtmlSinks(file: AuditFile, configuredSanitizers: Set<string>): AuditFinding[] {
+  const astro = file.astro;
+  const sourceFile = file.sourceFile;
+  if (!astro || !sourceFile) {
+    return [];
+  }
+
+  return astro.htmlSinks.flatMap((sink) => {
+    if (sink.kind === "quoted" || sink.expression.trim().length === 0) {
+      return [];
+    }
+    const analysis = astroHtmlExpression(sourceFile.getFullText(), sink.expression, configuredSanitizers);
+    if (!analysis || isSafeHtmlExpression(analysis.expression, analysis.sourceFile, analysis.bindings, new Set())) {
+      return [];
+    }
+    if (!containsClearlyUntrustedAstroSource(analysis.expression, analysis.sourceFile)) {
+      return [];
+    }
+    return [finding(file, "NB-ARCH-011", "unsanitized-html", sink.line ?? 1)];
+  });
+}
+
+function astroHtmlExpression(
+  frontmatter: string,
+  expression: string,
+  configuredSanitizers: Set<string>,
+): { expression: Expression; sourceFile: SourceFile; bindings: HtmlBindings } | null {
+  const project = new Project({ useInMemoryFileSystem: true, skipAddingFilesFromTsConfig: true });
+  const sourceFile = project.createSourceFile(
+    "astro-html-expression.ts",
+    `${frontmatter}\nconst __nodeBoostAstroHtml = (${expression});\n`,
+    { overwrite: true, scriptKind: ScriptKind.TS },
+  );
+  const initializer = sourceFile.getVariableDeclaration("__nodeBoostAstroHtml")?.getInitializer();
+  if (!initializer) {
+    return null;
+  }
+  return {
+    expression: initializer,
+    sourceFile,
+    bindings: collectHtmlBindings(sourceFile, configuredSanitizers),
+  };
+}
+
+function containsClearlyUntrustedAstroSource(expression: Expression, sourceFile: SourceFile): boolean {
+  const resolved = resolveExpression(expression, sourceFile) ?? expression;
+  const nodes = [resolved, ...resolved.getDescendants()];
+  return nodes.some((node) => {
+    if (Node.isCallExpression(node)) {
+      const target = callTarget(node.getExpression());
+      return target === "Astro.url.searchParams.get"
+        || target === "Astro.request.formData"
+        || target === "Astro.request.json"
+        || target === "Astro.request.text";
+    }
+    if (Node.isPropertyAccessExpression(node)) {
+      const target = callTarget(node);
+      return target === "Astro.request.body";
+    }
+    return false;
+  });
+}
 
 function findUnsafeHtmlSinks(file: AuditFile, configuredSanitizers: Set<string>): AuditFinding[] {
   const sourceFile = file.sourceFile;

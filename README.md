@@ -1,6 +1,6 @@
 # node-boost
 
-node-boost is Boost for the Node ecosystem: a CLI and MCP guidance layer that installs project-specific AI instructions, agent skills, audit rules, and guard hooks. It targets React apps, with first-class support for Next.js and Vite React projects.
+node-boost is Boost for the Node ecosystem: a CLI and MCP guidance layer that installs project-specific AI instructions, agent skills, audit rules, and guard hooks. It supports Astro 5–7, Next.js, and Vite React projects.
 
 No telemetry. node-boost reads your local project, writes local files, and does not phone home.
 
@@ -12,6 +12,12 @@ npx node-boost install
 ```
 
 The npm package is published as `@node-boost/node-boost`; the installed CLI binary is `node-boost`.
+
+## Requirements
+
+node-boost requires Node.js `22.12.0` or newer. Node.js 20 is no longer supported; upgrade
+the runtime before installing or running the package. CI and release checks cover Node.js 22
+and 24.
 
 Content-only extensions publish a versioned `node-boost.plugin.json` manifest. node-boost
 resolves and validates that manifest without importing the plugin package entrypoint. The
@@ -48,9 +54,11 @@ npx node-boost doctor --agent
 
 | Tool | Purpose |
 | --- | --- |
-| `application_info` | Return detected stack, capabilities, package manager, packages, routes, and node-boost config summary. |
+| `application_info` | Return detected stack, capabilities, Astro profile, package manager, packages, routes, and node-boost config summary. |
 | `library_docs` | Return version-aware official documentation routes and exact package references. |
-| `list_routes` | List Next app routes, including route handlers and parallel slots. |
+| `list_routes` | List Next routes or Astro pages, endpoints, dynamic params, partials, and rendering mode. |
+| `list_islands` | List Astro `client:*` and `server:defer` islands with their source locations. |
+| `architecture_map` | Return Astro content collections, Actions, middleware, and advanced routing entrypoints. |
 | `doctor` | Run the same full checks as `node-boost doctor`. |
 | `audit` | Run `node-boost audit --all` and return JSON. |
 | `explain_finding` | Explain a rule such as `NB-ARCH-005`. |
@@ -83,6 +91,11 @@ The routing policy is conservative:
 | `secure-by-default` | Public env names and HTML injection are checked. |
 | `modern-typescript` | Strict TS and no explicit `any` in source. |
 | `ui-states` | Loading, empty, error, disabled, and optimistic states are represented deliberately. |
+| `islands-architecture` | Astro hydration stays explicit and server-only code does not enter client islands. |
+| `rendering-strategy` | Static-first, server-first, and mixed rendering rules match the detected project. |
+| `content-modeling` | Astro content collections and their build or live loaders remain typed and local. |
+| `request-boundaries` | Astro endpoints, Actions, middleware, sessions, and caching keep request data isolated. |
+| `multi-framework-boundaries` | Projects using multiple Astro UI integrations keep framework ownership explicit. |
 
 ## Audit And Guard
 
@@ -101,6 +114,31 @@ Suppress a finding only with a reason:
 ```
 
 Suppression without `-- reason` is reported as `NB-META-001`.
+
+Astro template findings can use an HTML comment on the finding line or the line above:
+
+```astro
+<!-- nb-disable NB-ARCH-011 -- trusted CMS output is sanitized upstream -->
+<article set:html={trustedHtml} />
+```
+
+## Astro support
+
+Astro detection runs before the Vite fallback and builds one capability profile from direct
+dependencies, statically readable `astro.config.*`, and `src/**`. Dynamic configuration is
+never executed. In that case `application_info` returns a warning and the detector uses
+conservative dependency and source fallbacks.
+
+The profile covers Astro 5, 6, and 7, static and server output, mixed prerendering, official
+deployment adapters, React, Preact, Vue, Svelte, Solid, Lit, MDX, content collections,
+Actions, middleware, sessions, route cache, i18n, advanced routing, endpoints, and islands.
+The audit parses `.astro` templates with `@astrojs/compiler` and sends only frontmatter to the
+TypeScript analyzer. It reports high-confidence unsafe `set:html`, secret-looking public env,
+server-only imports in hydrated islands, incompatible Astro integrations, missing `astro check`,
+and request-dependent cached routes.
+
+Authoring custom Astro integrations, deployment adapters, themes, starters, and renderers is
+outside this application-support scope.
 
 ## Hooks
 
@@ -246,7 +284,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run check
@@ -267,8 +305,7 @@ Generated `.ai/**`, including `.ai/docs/llms.txt`, agent files, and `node-boost.
 
 ## Roadmap
 
-- third-party package guidelines beyond the current React stack,
-- Angular,
-- Vue,
+- third-party package guidelines beyond the current stacks,
+- standalone Angular and Vue application support,
 - React Native,
 - additional architecture patterns from the v1 backlog.

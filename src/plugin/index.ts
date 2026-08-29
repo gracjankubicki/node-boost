@@ -1,6 +1,6 @@
 /** Stable content-only extension contract for node-boost plugins. */
 
-export type NodeBoostPluginStack = "next" | "vite-react" | "react-generic";
+export type NodeBoostPluginStack = "next" | "vite-react" | "astro" | "react-generic";
 
 export interface NodeBoostPluginVariantResources {
   guideline?: string;
@@ -73,7 +73,7 @@ function validateArchitecture(
 
   const stackNames = new Set<NodeBoostPluginStack>();
   for (const stack of architecture.stacks) {
-    if (stack !== "next" && stack !== "vite-react" && stack !== "react-generic") {
+    if (stack !== "next" && stack !== "vite-react" && stack !== "astro" && stack !== "react-generic") {
       throw new Error(`Invalid node-boost architecture ${architecture.slug}: unsupported stack ${String(stack)}.`);
     }
     if (stackNames.has(stack)) {

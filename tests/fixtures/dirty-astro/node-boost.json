@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "generatedWith": "0.4.0",
+  "stack": "astro",
+  "agents": ["claude-code", "codex", "cursor"],
+  "features": {
+    "guidelines": true,
+    "skills": true,
+    "mcp": true,
+    "architecture": true,
+    "hooks": true
+  },
+  "architectures": [
+    { "name": "feature-modules", "boundary": "public-api" },
+    "typed-contracts",
+    "component-composition",
+    "testing-strategy",
+    "secure-by-default",
+    "modern-typescript",
+    "islands-architecture",
+    "rendering-strategy",
+    "request-boundaries"
+  ],
+  "audit": {
+    "exclude": [],
+    "rules": {},
+    "ruleOptions": {}
+  }
+}

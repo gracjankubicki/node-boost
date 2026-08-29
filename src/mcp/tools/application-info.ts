@@ -1,6 +1,6 @@
 import { version as nodeVersion } from "node:process";
 import { detectStack } from "../../detect/stack.js";
-import type { PackageInfo } from "../../types.js";
+import type { AstroProjectProfile, PackageInfo } from "../../types.js";
 import { readBoostConfig, readTypescriptStrict } from "../project.js";
 
 export interface ApplicationInfo {
@@ -21,6 +21,8 @@ export interface ApplicationInfo {
     reactCompiler: boolean;
     nextCacheComponents: boolean;
   };
+  astro: AstroProjectProfile | null;
+  warnings: string[];
   packages: Record<string, string>;
   boost: {
     version: string;
@@ -50,6 +52,8 @@ export async function applicationInfoTool(rootDir: string, boostVersion: string)
     },
     linting: stack.linting,
     capabilities: stack.capabilities,
+    astro: stack.astro,
+    warnings: stack.warnings,
     packages: detectedPackages(stack.packages),
     boost: boostConfig.config
       ? {
@@ -82,5 +86,5 @@ function detectedPackages(packages: Record<string, PackageInfo>): Record<string,
 }
 
 function stackVersion(packages: Record<string, PackageInfo>): string | null {
-  return packages.next?.version ?? packages.vite?.version ?? packages.react?.version ?? null;
+  return packages.astro?.version ?? packages.next?.version ?? packages.vite?.version ?? packages.react?.version ?? null;
 }

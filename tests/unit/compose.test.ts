@@ -81,6 +81,28 @@ describe("resource composition", () => {
     ]);
   });
 
+  it("composes Astro, framework, and capability resources from one profile", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "astro-react"));
+    const architectures = [
+      { name: "rendering-strategy", options: {} },
+      { name: "islands-architecture", options: {} },
+      { name: "content-modeling", options: {} },
+      { name: "request-boundaries", options: {} },
+    ];
+    const guidelinePaths = (await composeGuidelines(repoRoot, stack, architectures)).map((resource) => resource.sourcePath);
+    const skillPaths = (await composeSkills(repoRoot, stack, architectures)).map((resource) => resource.sourcePath);
+
+    expect(guidelinePaths).toContain("resources/stacks/astro/guidelines/core.md");
+    expect(guidelinePaths).toContain("resources/stacks/astro/guidelines/astro/6.md");
+    expect(guidelinePaths).toContain("resources/stacks/astro/guidelines/content-collections.md");
+    expect(guidelinePaths).toContain("resources/frameworks/react/guidelines/core.md");
+    expect(guidelinePaths).toContain("resources/stacks/astro/architectures/rendering-strategy/variants/mixed.md");
+    expect(guidelinePaths).toContain("resources/stacks/astro/architectures/islands-architecture/guideline.md");
+    expect(skillPaths).toContain("resources/stacks/astro/skills/astro-development/SKILL.md");
+    expect(skillPaths).toContain("resources/frameworks/react/skills/development/SKILL.md");
+    expect(skillPaths).toContain("resources/stacks/astro/architectures/content-modeling/skill/SKILL.md");
+  });
+
   it("does not install duplicate Tailwind and testing skills when architecture skills are selected", async () => {
     const stack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
     const resources = await composeSkills(repoRoot, stack, [

@@ -6,6 +6,8 @@ Use a testing-trophy shape with the capabilities the repository actually has: be
 
 Jest/Vitest, Testing Library, `userEvent`, MSW, Storybook, and Playwright/Cypress are separate capabilities. Read package scripts, local instructions, setup files, and nearby tests. Never invent `npm test`, MSW handlers, or Playwright files when the repository uses different commands or lacks those tools.
 
+Astro projects should include `astro check` in a package validation script. `NB-ASTRO-004` (warn) reports projects that omit it.
+
 ## Test behavior
 
 <code-snippet name="Query by role, act like a user" lang="tsx">

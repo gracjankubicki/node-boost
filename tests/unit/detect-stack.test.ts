@@ -41,6 +41,126 @@ describe("detectStack", () => {
     expect(stack.packages["react-router"].version).toBeNull();
   });
 
+  it("detects Astro before transitive Vite and builds one capability profile", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-astro-profile-"));
+
+    try {
+      await mkdir(join(rootDir, "node_modules", "vite"), { recursive: true });
+      await mkdir(join(rootDir, "src", "pages", "api"), { recursive: true });
+      await mkdir(join(rootDir, "src", "actions"), { recursive: true });
+      await mkdir(join(rootDir, "src", "content"), { recursive: true });
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({
+          private: true,
+          dependencies: {
+            astro: "^7.2.0",
+            react: "^19.0.0",
+            "@astrojs/react": "^6.0.0",
+            "@astrojs/node": "^11.0.0",
+            "@astrojs/mdx": "^7.0.0",
+          },
+          devDependencies: { vitest: "^4.0.0" },
+        }, null, 2),
+        "utf8",
+      );
+      await writeFile(join(rootDir, "node_modules", "vite", "package.json"), JSON.stringify({ version: "8.2.1" }), "utf8");
+      await writeFile(
+        join(rootDir, "astro.config.mjs"),
+        [
+          'import { defineConfig } from "astro/config";',
+          'import react from "@astrojs/react";',
+          'import mdx from "@astrojs/mdx";',
+          'import node from "@astrojs/node";',
+          'export default defineConfig({ output: "server", adapter: node(), integrations: [react(), mdx()], i18n: { defaultLocale: "pl", locales: ["pl"] }, session: { driver: "memory" } });',
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "src", "pages", "index.astro"),
+        '---\nexport const prerender = true;\n---\n<Widget client:visible /><User server:defer />\n',
+        "utf8",
+      );
+      await writeFile(join(rootDir, "src", "pages", "api", "health.ts"), 'export const GET = () => new Response("ok");\n', "utf8");
+      await writeFile(join(rootDir, "src", "actions", "index.ts"), 'import { defineAction } from "astro:actions";\nexport const server = { save: defineAction({}) };\n', "utf8");
+      await writeFile(join(rootDir, "src", "middleware.ts"), 'export const onRequest = () => {};\n', "utf8");
+      await writeFile(join(rootDir, "src", "content.config.ts"), 'import { defineCollection } from "astro:content";\nexport const collections = { docs: defineCollection({}) };\n', "utf8");
+      await writeFile(join(rootDir, "src", "fetch.ts"), 'export default { fetch() { return new Response("ok"); } };\n', "utf8");
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.name).toBe("astro");
+      expect(stack.packages.vite.source).toBe("node_modules");
+      expect(stack.astro).toMatchObject({
+        major: 7,
+        output: "server",
+        rendering: "mixed",
+        adapter: "node",
+        uiIntegrations: ["react"],
+        mdx: true,
+        contentCollections: "build",
+        actions: true,
+        middleware: true,
+        sessions: true,
+        i18n: true,
+        advancedRouting: true,
+        clientIslands: true,
+        serverIslands: true,
+        htmlInjection: false,
+        endpoints: true,
+        testTools: ["vitest"],
+      });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("warns instead of executing a dynamic Astro config", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-astro-dynamic-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { astro: "^7.0.0", "@astrojs/react": "^6.0.0" } }),
+        "utf8",
+      );
+      await writeFile(join(rootDir, "astro.config.mjs"), "export default defineConfig(() => ({ integrations: [] }));\n", "utf8");
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.name).toBe("astro");
+      expect(stack.astro?.uiIntegrations).toEqual(["react"]);
+      expect(stack.warnings).toContain("Astro config is dynamic; capability detection uses conservative dependency and source fallbacks.");
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a statically recognizable CommonJS Astro config", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "node-boost-astro-cjs-"));
+
+    try {
+      await writeFile(
+        join(rootDir, "package.json"),
+        JSON.stringify({ private: true, dependencies: { astro: "^5.18.2" } }),
+        "utf8",
+      );
+      await writeFile(
+        join(rootDir, "astro.config.cjs"),
+        'module.exports = { output: "server", i18n: { defaultLocale: "en", locales: ["en"] } };\n',
+        "utf8",
+      );
+
+      const stack = await detectStack(rootDir);
+
+      expect(stack.astro).toMatchObject({ major: 5, output: "server", rendering: "server-first", i18n: true });
+      expect(stack.warnings).not.toContain("Astro config is dynamic; capability detection uses conservative dependency and source fallbacks.");
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("extracts the minimal version from package ranges", () => {
     expect(extractVersionFromRange("^16.2.9")).toBe("16.2.9");
     expect(extractVersionFromRange("~7.1")).toBe("7.1.0");

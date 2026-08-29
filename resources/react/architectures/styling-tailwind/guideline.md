@@ -16,6 +16,8 @@ Tailwind 4 is CSS-first by default:
 
 Do not generate a v3-style JS config by default. Tailwind 4 can still load legacy JavaScript configuration through `@config`; preserve it when the repository deliberately uses compatibility mode.
 
+In Astro, `NB-ASTRO-003` (warn) reports Tailwind 4 combined with the legacy `@astrojs/tailwind` integration. Use the Tailwind CSS Vite plugin supported by current Astro instead.
+
 ## Rules
 
 - **Tokens over arbitrary values**: colors/spacing come from `@theme`; `w-[347px]` needs a reason, or the codebase grows fifty shades of gray.

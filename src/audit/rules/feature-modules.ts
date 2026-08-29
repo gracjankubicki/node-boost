@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AuditFile, AuditRule } from "../rule.js";
-import { finding } from "./helpers.js";
+import { finding, sourceLineNumber } from "./helpers.js";
 
 export const featureModuleRules: AuditRule[] = [
   {
@@ -9,7 +9,7 @@ export const featureModuleRules: AuditRule[] = [
     code: "cross-feature-deep-import",
     architecture: "feature-modules",
     defaultSeverity: "err",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       const featuresDir = normalizeDirectory(
@@ -47,7 +47,7 @@ export const featureModuleRules: AuditRule[] = [
     code: "feature-imports-app",
     architecture: "feature-modules",
     defaultSeverity: "err",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       const featuresDir = normalizeDirectory(
@@ -77,11 +77,11 @@ function moduleSpecs(file: AuditFile): Array<{ specifier: string; line: number }
 
   const imports = file.sourceFile.getImportDeclarations().map((declaration) => ({
     specifier: declaration.getModuleSpecifierValue(),
-    line: declaration.getStartLineNumber(),
+    line: sourceLineNumber(file, declaration.getStartLineNumber()),
   }));
   const exports = file.sourceFile.getExportDeclarations().flatMap((declaration) => {
     const specifier = declaration.getModuleSpecifierValue();
-    return specifier ? [{ specifier, line: declaration.getStartLineNumber() }] : [];
+    return specifier ? [{ specifier, line: sourceLineNumber(file, declaration.getStartLineNumber()) }] : [];
   });
 
   return [...imports, ...exports];

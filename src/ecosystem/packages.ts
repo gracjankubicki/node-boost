@@ -20,6 +20,22 @@ export const richTextPackageNames = [
 ] as const;
 
 export const trackedPackageNames = [
+  "astro",
+  "@astrojs/compiler",
+  "@astrojs/react",
+  "@astrojs/preact",
+  "@astrojs/vue",
+  "@astrojs/svelte",
+  "@astrojs/solid-js",
+  "@astrojs/lit",
+  "@astrojs/mdx",
+  "@astrojs/node",
+  "@astrojs/cloudflare",
+  "@astrojs/netlify",
+  "@astrojs/vercel",
+  "@astrojs/tailwind",
+  "@astrojs/db",
+  "@tailwindcss/vite",
   "next",
   "react",
   "vite",

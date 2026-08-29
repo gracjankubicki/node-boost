@@ -1,10 +1,23 @@
-import { readdir } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-export async function listResourceFiles(rootDir: string, kind: "guidelines" | "skills"): Promise<string[]> {
-  const baseDir = join(rootDir, "resources", "react", kind);
+export async function listResourceFiles(
+  rootDir: string,
+  kind: "guidelines" | "skills",
+  resourceRoot = join("resources", "react"),
+): Promise<string[]> {
+  const baseDir = join(rootDir, resourceRoot, kind);
   const files = await walkMarkdownFiles(baseDir);
   return files.map((file) => relative(baseDir, file).replaceAll("\\", "/")).sort((a, b) => a.localeCompare(b));
+}
+
+export async function resourceFileExists(rootDir: string, sourcePath: string): Promise<boolean> {
+  try {
+    await access(join(rootDir, sourcePath));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function walkMarkdownFiles(dir: string): Promise<string[]> {

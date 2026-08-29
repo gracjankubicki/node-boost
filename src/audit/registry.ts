@@ -9,6 +9,7 @@ import { secureByDefaultRules } from "./rules/secure-by-default.js";
 import { serverFirstComponentRules } from "./rules/server-first-components.js";
 import { stateManagementRules } from "./rules/state-management.js";
 import { typedContractRules } from "./rules/typed-contracts.js";
+import { astroRules } from "./rules/astro.js";
 
 export const auditRules: AuditRule[] = [
   ...featureModuleRules,
@@ -19,6 +20,7 @@ export const auditRules: AuditRule[] = [
   ...errorLoadingBoundaryRules,
   ...secureByDefaultRules,
   ...modernTypeScriptRules,
+  ...astroRules,
 ];
 
 const implementedRuleIds = new Set(auditRules.map((rule) => rule.id));
@@ -46,6 +48,11 @@ const guidelineByArchitecture: Record<ArchitectureSlug, string> = {
   "secure-by-default": ".ai/guidelines/architectures/secure-by-default.md",
   "modern-typescript": ".ai/guidelines/architectures/modern-typescript.md",
   "ui-states": ".ai/guidelines/architectures/ui-states.md",
+  "islands-architecture": ".ai/guidelines/architectures/islands-architecture.md",
+  "rendering-strategy": ".ai/guidelines/architectures/rendering-strategy.md",
+  "content-modeling": ".ai/guidelines/architectures/content-modeling.md",
+  "request-boundaries": ".ai/guidelines/architectures/request-boundaries.md",
+  "multi-framework-boundaries": ".ai/guidelines/architectures/multi-framework-boundaries.md",
 };
 
 export const explainEntries = new Map<string, ExplainEntry>(auditRules.map((rule) => {

@@ -18,6 +18,21 @@ export function renderGuidelinesIndex(
   const fileLines = guidelines
     .map((guideline) => `- ${guideline.outputPath}: ${sourceLabel(guideline)}`)
     .sort((a, b) => a.localeCompare(b));
+  const astroProfile = stack.astro
+    ? [
+        "## Astro profile",
+        "",
+        `- version: ${stack.astro.version ?? "unknown"}`,
+        `- output: ${stack.astro.output}`,
+        `- rendering: ${stack.astro.rendering}`,
+        `- adapter: ${stack.astro.adapter ?? "none"}`,
+        `- UI integrations: ${stack.astro.uiIntegrations.join(", ") || "none"}`,
+        `- content collections: ${stack.astro.contentCollections}`,
+        `- client islands: ${stack.astro.clientIslands ? "yes" : "no"}`,
+        `- server islands: ${stack.astro.serverIslands ? "yes" : "no"}`,
+        "",
+      ]
+    : [];
 
   return [
     "# node-boost guidelines",
@@ -34,6 +49,7 @@ export function renderGuidelinesIndex(
     `- React Compiler configured: ${stack.capabilities.reactCompiler ? "yes" : "no"}`,
     `- Next Cache Components enabled: ${stack.capabilities.nextCacheComponents ? "yes" : "no"}`,
     "",
+    ...astroProfile,
     "## Packages",
     "",
     ...(packages.length ? packages : ["- none detected"]),

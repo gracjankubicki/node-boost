@@ -2,6 +2,7 @@ import type { SourceFile } from "ts-morph";
 import type { ArchitectureSlug, DetectedStack, StackName } from "../types.js";
 import type { NodeBoostConfig } from "../config/schema.js";
 import type { TypeScriptModuleResolver } from "./typescript-resolver.js";
+import type { AstroSourceDocument } from "../astro/source.js";
 
 export type AuditSeverity = "err" | "warn";
 export type RuleSeverity = AuditSeverity | "off";
@@ -22,6 +23,7 @@ export interface AuditFile {
   content: string;
   lines: string[];
   sourceFile: SourceFile | null;
+  astro: AstroSourceDocument | null;
   skipped: boolean;
 }
 

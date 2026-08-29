@@ -33,4 +33,19 @@ describe("stack adapters", () => {
     expect(adapter?.recommendedArchitectures(stack)).not.toContain("feature-modules");
     expect(adapter?.recommendedArchitectures(stack)).not.toContain("ui-states");
   });
+
+  it("recommends Astro architectures from detected capabilities", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "astro-react"));
+    const adapter = getStackAdapter(stack);
+    const recommended = adapter?.recommendedArchitectures(stack) ?? [];
+
+    expect(adapter?.name).toBe("astro");
+    expect(recommended).toContain("rendering-strategy");
+    expect(recommended).toContain("islands-architecture");
+    expect(recommended).toContain("content-modeling");
+    expect(recommended).toContain("request-boundaries");
+    expect(recommended).toContain("testing-strategy");
+    expect(recommended).not.toContain("server-first-components");
+    expect(recommended).not.toContain("multi-framework-boundaries");
+  });
 });

@@ -1,0 +1,15 @@
+---
+import Counter from "../components/Counter.jsx";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="React islands">
+  <main>
+    <h1>React islands</h1>
+    <Counter client:load />
+    <Counter client:idle />
+    <Counter client:visible />
+    <Counter client:media="(min-width: 640px)" />
+    <Counter client:only="react" />
+  </main>
+</Layout>

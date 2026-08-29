@@ -15,6 +15,11 @@ export const auditRuleIds = [
   "NB-ARCH-012",
   "NB-ARCH-013",
   "NB-ARCH-014",
+  "NB-ASTRO-001",
+  "NB-ASTRO-002",
+  "NB-ASTRO-003",
+  "NB-ASTRO-004",
+  "NB-ASTRO-005",
 ] as const;
 
 export type AuditRuleId = typeof auditRuleIds[number];
@@ -47,6 +52,11 @@ export const auditRuleOptionSchemas: Record<AuditRuleId, z.ZodType> = {
   "NB-ARCH-012": noOptions,
   "NB-ARCH-013": noOptions,
   "NB-ARCH-014": noOptions,
+  "NB-ASTRO-001": noOptions,
+  "NB-ASTRO-002": noOptions,
+  "NB-ASTRO-003": noOptions,
+  "NB-ASTRO-004": noOptions,
+  "NB-ASTRO-005": noOptions,
 };
 
 export const auditRuleMetadata: Record<AuditRuleId, { description: string; fix: string }> = {
@@ -105,5 +115,25 @@ export const auditRuleMetadata: Record<AuditRuleId, { description: string; fix: 
   "NB-ARCH-014": {
     description: "Source code should avoid explicit any outside tests and declarations.",
     fix: "Replace any with a concrete, unknown, or generic type.",
+  },
+  "NB-ASTRO-001": {
+    description: "Hydrated Astro islands must not directly import server-only modules.",
+    fix: "Move server work to the Astro frontmatter or an endpoint and pass serializable data to the island.",
+  },
+  "NB-ASTRO-002": {
+    description: "Astro 7 projects must not depend on the removed Astro DB integration.",
+    fix: "Migrate @astrojs/db data access before upgrading the application to Astro 7.",
+  },
+  "NB-ASTRO-003": {
+    description: "Tailwind CSS 4 projects should not use the legacy Astro Tailwind integration.",
+    fix: "Replace @astrojs/tailwind with the Tailwind CSS Vite plugin supported by Astro.",
+  },
+  "NB-ASTRO-004": {
+    description: "Astro projects should run astro check in their validation scripts.",
+    fix: "Add astro check to a package script used by local and CI validation.",
+  },
+  "NB-ASTRO-005": {
+    description: "Request-dependent Astro routes must not opt into shared route caching.",
+    fix: "Remove route caching or move session and cookie-dependent work outside the cached route.",
   },
 };

@@ -10,7 +10,7 @@ export default defineConfig([
     dts: true,
     clean: true,
     sourcemap: true,
-    target: "node20",
+    target: "node22",
     external,
   },
   {
@@ -19,7 +19,7 @@ export default defineConfig([
     dts: false,
     clean: false,
     sourcemap: true,
-    target: "node20",
+    target: "node22",
     external,
     noExternal: ["@modelcontextprotocol/sdk"],
     banner: {

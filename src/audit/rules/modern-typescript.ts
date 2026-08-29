@@ -1,7 +1,7 @@
 import { readTypeScriptConfig } from "../../config/typescript-config.js";
 import { SyntaxKind } from "ts-morph";
 import type { AuditRule } from "../rule.js";
-import { finding, isTestFile } from "./helpers.js";
+import { finding, isTestFile, sourceLineNumber } from "./helpers.js";
 
 export const modernTypeScriptRules: AuditRule[] = [
   {
@@ -9,7 +9,7 @@ export const modernTypeScriptRules: AuditRule[] = [
     code: "tsconfig-not-strict",
     architecture: "modern-typescript",
     defaultSeverity: "warn",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "project",
     check(context) {
       return readTypeScriptConfig(context.rootDir).strict === true ? [] : [{
@@ -26,7 +26,7 @@ export const modernTypeScriptRules: AuditRule[] = [
     code: "explicit-any",
     architecture: "modern-typescript",
     defaultSeverity: "warn",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       return context.files.flatMap((file) => {
@@ -34,7 +34,8 @@ export const modernTypeScriptRules: AuditRule[] = [
           return [];
         }
 
-        const lines = new Set(file.sourceFile.getDescendantsOfKind(SyntaxKind.AnyKeyword).map((node) => node.getStartLineNumber()));
+        const lines = new Set(file.sourceFile.getDescendantsOfKind(SyntaxKind.AnyKeyword)
+          .map((node) => sourceLineNumber(file, node.getStartLineNumber())));
         return [...lines].map((line) => finding(file, "NB-ARCH-014", "explicit-any", line));
       });
     },

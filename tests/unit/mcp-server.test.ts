@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import packageJson from "../../package.json" with { type: "json" };
 import { createNodeBoostMcpServer } from "../../src/mcp/server.js";
 import { runInstall } from "../../src/install/orchestrator.js";
 
@@ -104,6 +105,107 @@ describe("node-boost MCP server", () => {
     });
   });
 
+  it("reports Astro profile, routes, islands, and architecture map", async () => {
+    await withFixture("astro-react", async (projectRoot) => {
+      const client = await createClient(projectRoot);
+      const info = await callJsonTool<ApplicationInfo>(client, "application_info");
+      const routes = await callJsonTool<RouteEntry[]>(client, "list_routes");
+      const islands = await callJsonTool<Array<{ component: string; directive: string; kind: string; file: string }>>(client, "list_islands");
+      const architecture = await callJsonTool<{
+        supported: true;
+        contentConfig: string[];
+        actions: string[];
+        middleware: string[];
+        advancedRouting: string[];
+      }>(client, "architecture_map");
+
+      expect(info.stack.name).toBe("astro");
+      expect(info.stack.version).toBe("6.4.8");
+      expect(info.astro).toMatchObject({
+        output: "static",
+        rendering: "mixed",
+        adapter: "node",
+        uiIntegrations: ["react"],
+        contentCollections: "build",
+        clientIslands: true,
+      });
+      expect(routes).toContainEqual({
+        path: "/account",
+        type: "page",
+        file: "src/pages/account.astro",
+        dynamic: [],
+        rendering: "on-demand",
+        partial: false,
+      });
+      expect(routes).toContainEqual(expect.objectContaining({ path: "/api/ping", type: "endpoint", rendering: "static" }));
+      expect(routes).toContainEqual({
+        path: "/docs",
+        type: "page",
+        file: "src/pages/docs.mdx",
+        dynamic: [],
+        rendering: "static",
+        partial: false,
+      });
+      expect(routes).toContainEqual({
+        path: "/[slug]",
+        type: "page",
+        file: "src/pages/[slug].astro",
+        dynamic: ["slug"],
+        rendering: "static",
+        partial: true,
+      });
+      expect(islands).toContainEqual(expect.objectContaining({
+        component: "Counter",
+        directive: "client:visible",
+        kind: "client",
+        file: "src/pages/index.astro",
+      }));
+      expect(architecture.contentConfig).toEqual(["src/content.config.ts"]);
+    });
+
+    await withFixture("astro-static", async (projectRoot) => {
+      const client = await createClient(projectRoot);
+      const routes = await callJsonTool<RouteEntry[]>(client, "list_routes");
+
+      expect(routes).toContainEqual(expect.objectContaining({ path: "/about", file: "src/pages/about.md" }));
+      expect(routes).toContainEqual(expect.objectContaining({ path: "/legal", file: "src/pages/legal.html" }));
+    });
+
+    await withFixture("astro-server", async (projectRoot) => {
+      const client = await createClient(projectRoot);
+      const info = await callJsonTool<ApplicationInfo>(client, "application_info");
+      const islands = await callJsonTool<Array<{ component: string; directive: string; kind: string; file: string }>>(client, "list_islands");
+      const architecture = await callJsonTool<{
+        supported: true;
+        contentConfig: string[];
+        actions: string[];
+        middleware: string[];
+        advancedRouting: string[];
+      }>(client, "architecture_map");
+
+      expect(info.astro).toMatchObject({
+        output: "server",
+        rendering: "server-first",
+        actions: true,
+        middleware: true,
+        sessions: true,
+        routeCache: true,
+        serverIslands: true,
+      });
+      expect(islands).toContainEqual(expect.objectContaining({
+        component: "Personalized",
+        directive: "server:defer",
+        kind: "server",
+      }));
+      expect(architecture).toMatchObject({
+        contentConfig: ["src/content.config.ts"],
+        actions: ["src/actions/index.ts"],
+        middleware: ["src/middleware.ts"],
+        advancedRouting: ["src/fetch.ts"],
+      });
+    });
+  });
+
   it("returns version-aware library documentation routes", async () => {
     await withFixture("next-app", async (projectRoot) => {
       const client = await createClient(projectRoot);
@@ -146,7 +248,7 @@ describe("node-boost MCP server", () => {
       expect(drift.checks).toContainEqual({
         id: "generated-with-drift",
         status: "fail",
-          message: "generatedWith is 0.0.1, package is 0.4.0. Run node-boost update.",
+        message: `generatedWith is 0.0.1, package is ${packageJson.version}. Run node-boost update.`,
       });
       expect(drift.checks).toContainEqual(expect.objectContaining({ id: "agent-files-present", status: "fail" }));
 
@@ -326,6 +428,8 @@ interface ApplicationInfo {
   stack: { name: string; version: string | null; router: string; srcDir: boolean };
   packages: Record<string, string>;
   capabilities: { reactCompiler: boolean; nextCacheComponents: boolean };
+  astro: Record<string, unknown> | null;
+  warnings: string[];
   boost: { generatedWith: string; architectures: Array<{ name: string; options: Record<string, unknown> }> } | null;
 }
 
@@ -335,6 +439,8 @@ interface RouteEntry {
   file: string;
   dynamic: string[];
   slot?: string;
+  rendering?: "static" | "on-demand";
+  partial?: boolean;
 }
 
 interface UnsupportedRoutes {
