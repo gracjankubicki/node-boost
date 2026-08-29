@@ -11,6 +11,7 @@ import {
 } from "ts-morph";
 import { trackedPackageNames } from "../ecosystem/packages.js";
 import { detectPackageManager } from "./package-manager.js";
+import { detectAstroProject } from "./astro.js";
 import { detectNextRouter } from "./router.js";
 import type { DetectedStack, LintingKind, PackageInfo, StackName } from "../types.js";
 
@@ -48,12 +49,14 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
   const warnings: string[] = [];
 
   const name = detectStackName(packages);
+  const astroDetection = await detectAstroProject(rootDir, packages);
   const nextRouter = name === "next" ? await detectNextRouter(rootDir) : null;
   const hasReactRouter = Boolean(packages["react-router"]?.version || packages["react-router-dom"]?.version);
   const router = nextRouter?.router ?? (name === "vite-react" && hasReactRouter ? "react-router" : "none");
   const srcDir = nextRouter?.srcDir ?? false;
   const linting = detectLinting(packages);
   const capabilities = await detectCapabilities(rootDir, packageJson);
+  warnings.push(...astroDetection.warnings);
 
   if (Object.values(packages).some((pkg) => pkg.source === "range")) {
     warnings.push("node_modules not available for at least one package; using declared version range fallback.");
@@ -68,6 +71,7 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
     packageManager,
     packages,
     capabilities,
+    astro: astroDetection.profile,
     warnings,
   };
 }
@@ -288,6 +292,10 @@ async function detectPackages(rootDir: string, packageJson: PackageJson): Promis
 }
 
 function detectStackName(packages: Record<string, PackageInfo>): StackName {
+  if (packages.astro?.declaredRange) {
+    return "astro";
+  }
+
   if (packages.next?.version) {
     return "next";
   }

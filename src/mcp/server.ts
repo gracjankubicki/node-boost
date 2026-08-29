@@ -9,6 +9,8 @@ import { doctorTool } from "./tools/doctor.js";
 import { explainFindingTool } from "./tools/explain-finding.js";
 import { libraryDocsTool } from "./tools/library-docs.js";
 import { listRoutesTool } from "./tools/list-routes.js";
+import { listIslandsTool } from "./tools/list-islands.js";
+import { architectureMapTool } from "./tools/architecture-map.js";
 
 type ToolOutput = object | unknown[];
 
@@ -26,10 +28,12 @@ export function createNodeBoostMcpServer(options: NodeBoostMcpServerOptions = {}
     version: packageVersion,
   });
 
-  registerJsonTool(server, "application_info", "Return detected Node/React project information.", async () =>
+  registerJsonTool(server, "application_info", "Return detected Node project and stack information.", async () =>
     applicationInfoTool(rootDir, packageVersion),
   );
   registerJsonTool(server, "list_routes", "List detected application routes.", async () => listRoutesTool(rootDir));
+  registerJsonTool(server, "list_islands", "List detected Astro client and server islands.", async () => listIslandsTool(rootDir));
+  registerJsonTool(server, "architecture_map", "Map Astro content, actions, middleware, and advanced routing files.", async () => architectureMapTool(rootDir));
   registerJsonTool(server, "library_docs", "Return version-aware documentation routes for detected libraries.", async () =>
     libraryDocsTool(rootDir),
   );

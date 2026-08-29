@@ -18,6 +18,26 @@ describe("nodeBoostConfigSchema", () => {
     expect(config.audit.exclude).toEqual([]);
   });
 
+  it("accepts Astro and rendering strategy variants", () => {
+    const config = parseNodeBoostConfig({
+      version: 1,
+      generatedWith: "0.5.0",
+      stack: "astro",
+      architectures: [
+        { name: "rendering-strategy", variant: "mixed" },
+        "islands-architecture",
+        "content-modeling",
+        "request-boundaries",
+        "multi-framework-boundaries",
+      ],
+    });
+
+    expect(normalizeArchitectures(config)[0]).toEqual({
+      name: "rendering-strategy",
+      options: { variant: "mixed" },
+    });
+  });
+
   it("parses the 13 architecture slugs", () => {
     const config = parseNodeBoostConfig({
       version: 1,

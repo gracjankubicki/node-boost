@@ -22,6 +22,20 @@ interface DocumentationRoute {
 }
 
 const currentDocs: Record<string, string> = {
+  "@astrojs/cloudflare": "https://docs.astro.build/en/guides/integrations-guide/cloudflare/",
+  "@astrojs/compiler": "https://github.com/withastro/compiler#readme",
+  "@astrojs/lit": "https://docs.astro.build/en/guides/integrations-guide/lit/",
+  "@astrojs/mdx": "https://docs.astro.build/en/guides/integrations-guide/mdx/",
+  "@astrojs/netlify": "https://docs.astro.build/en/guides/integrations-guide/netlify/",
+  "@astrojs/node": "https://docs.astro.build/en/guides/integrations-guide/node/",
+  "@astrojs/preact": "https://docs.astro.build/en/guides/integrations-guide/preact/",
+  "@astrojs/react": "https://docs.astro.build/en/guides/integrations-guide/react/",
+  "@astrojs/solid-js": "https://docs.astro.build/en/guides/integrations-guide/solid-js/",
+  "@astrojs/svelte": "https://docs.astro.build/en/guides/integrations-guide/svelte/",
+  "@astrojs/tailwind": "https://docs.astro.build/en/guides/styling/#tailwind",
+  "@astrojs/vercel": "https://docs.astro.build/en/guides/integrations-guide/vercel/",
+  "@astrojs/vue": "https://docs.astro.build/en/guides/integrations-guide/vue/",
+  "@tailwindcss/vite": "https://tailwindcss.com/docs/installation/using-vite",
   "@biomejs/biome": "https://biomejs.dev/guides/getting-started/",
   "@lingui/core": "https://lingui.dev/introduction",
   "@tanstack/react-query": "https://tanstack.com/query/latest/docs/framework/react/overview",
@@ -53,6 +67,14 @@ const currentDocs: Record<string, string> = {
 };
 
 const documentationRoutes: Record<string, DocumentationRoute> = {
+  astro: {
+    officialDocs: (pkg) => {
+      if (pkg.major === 5 || pkg.major === 6) {
+        return { url: `https://v${pkg.major}.docs.astro.build/en/getting-started/`, scope: "major" };
+      }
+      return { url: "https://docs.astro.build/en/getting-started/", scope: "current" };
+    },
+  },
   next: {
     officialDocs: nextDocs,
     llms: nextLlms,

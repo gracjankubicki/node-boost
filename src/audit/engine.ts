@@ -9,6 +9,7 @@ import { buildSuppressionIndex } from "./suppression.js";
 import { createTypeScriptModuleResolver } from "./typescript-resolver.js";
 import type { AuditFile, AuditFinding, AuditResult } from "./rule.js";
 import { splitTextLines } from "./rules/helpers.js";
+import { parseAstroSource, type AstroSourceDocument } from "../astro/source.js";
 
 const maxAuditFileBytes = 2 * 1024 * 1024;
 
@@ -164,24 +165,34 @@ async function readAuditFiles(rootDir: string, files: string[], parseWarnings: A
           content,
           lines: [],
           sourceFile: null,
+          astro: null,
           skipped: true,
         };
       }
 
       const started = performance.now();
-      const sourceFile = project.createSourceFile(absolutePath, content, { overwrite: true });
+      const isAstroFile = file.endsWith(".astro");
+      const astro = isAstroFile ? await parseAstroDocument(file, content, parseWarnings) : null;
+      const sourceContent = astro?.frontmatter ?? (isAstroFile ? "" : content);
+      const sourceFile = project.createSourceFile(
+        file.endsWith(".astro") ? `${absolutePath}.frontmatter.ts` : absolutePath,
+        sourceContent,
+        { overwrite: true },
+      );
       const diagnostics = parseDiagnostics(sourceFile.compilerNode).filter((diagnostic) =>
         diagnostic.category === DiagnosticCategory.Error && diagnostic.code < 2000,
       );
       const elapsed = performance.now() - started;
-      const skipped = diagnostics.length > 0 || elapsed > 5000;
+      const astroHasErrors = astro?.diagnostics.some(isAstroError) ?? false;
+      const skipped = diagnostics.length > 0 || astroHasErrors || (isAstroFile && astro === null) || elapsed > 5000;
 
-      if (diagnostics.length > 0) {
+      if (diagnostics.length > 0 || astroHasErrors) {
+        const astroLine = astro?.diagnostics.find(isAstroError)?.location.line;
         parseWarnings.push({
           rule: "NB-META-002",
           sev: "warn",
           file,
-          line: diagnostics[0]?.start === undefined ? 1 : sourceFile.getLineAndColumnAtPos(diagnostics[0].start).line,
+          line: astroLine ?? (diagnostics[0]?.start === undefined ? 1 : sourceFile.getLineAndColumnAtPos(diagnostics[0].start).line),
           code: "parse-error",
         });
       } else if (elapsed > 5000) {
@@ -200,12 +211,36 @@ async function readAuditFiles(rootDir: string, files: string[], parseWarnings: A
         content,
         lines: splitTextLines(content),
         sourceFile: skipped ? null : sourceFile,
+        astro: skipped ? null : astro,
         skipped,
       };
     }),
   );
 
   return resolved.filter((file): file is AuditFile => file !== null);
+}
+
+function isAstroError(diagnostic: AstroSourceDocument["diagnostics"][number]): boolean {
+  return Number(diagnostic.severity) === 1;
+}
+
+async function parseAstroDocument(
+  file: string,
+  content: string,
+  parseWarnings: AuditFinding[],
+): Promise<AstroSourceDocument | null> {
+  try {
+    return await parseAstroSource(content);
+  } catch {
+    parseWarnings.push({
+      rule: "NB-META-002",
+      sev: "warn",
+      file,
+      line: 1,
+      code: "parse-error",
+    });
+    return null;
+  }
 }
 
 interface ParseDiagnostic {

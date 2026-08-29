@@ -18,6 +18,7 @@
       "enum": [
         "next",
         "vite-react",
+        "astro",
         "react-generic",
         "unknown"
       ]
@@ -111,7 +112,12 @@
               "error-loading-boundaries",
               "secure-by-default",
               "modern-typescript",
-              "ui-states"
+              "ui-states",
+              "islands-architecture",
+              "rendering-strategy",
+              "content-modeling",
+              "request-boundaries",
+              "multi-framework-boundaries"
             ]
           },
           {
@@ -144,6 +150,27 @@
             "properties": {
               "name": {
                 "type": "string",
+                "const": "rendering-strategy"
+              },
+              "variant": {
+                "type": "string",
+                "enum": [
+                  "static-first",
+                  "server-first",
+                  "mixed"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
                 "enum": [
                   "server-first-components",
                   "data-access-layer",
@@ -156,7 +183,11 @@
                   "error-loading-boundaries",
                   "secure-by-default",
                   "modern-typescript",
-                  "ui-states"
+                  "ui-states",
+                  "islands-architecture",
+                  "content-modeling",
+                  "request-boundaries",
+                  "multi-framework-boundaries"
                 ]
               }
             },
@@ -217,7 +248,12 @@
               "NB-ARCH-011",
               "NB-ARCH-012",
               "NB-ARCH-013",
-              "NB-ARCH-014"
+              "NB-ARCH-014",
+              "NB-ASTRO-001",
+              "NB-ASTRO-002",
+              "NB-ASTRO-003",
+              "NB-ASTRO-004",
+              "NB-ASTRO-005"
             ]
           },
           "additionalProperties": {
@@ -358,6 +394,31 @@
               "additionalProperties": false
             },
             "NB-ARCH-014": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ASTRO-001": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ASTRO-002": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ASTRO-003": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ASTRO-004": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ASTRO-005": {
               "type": "object",
               "properties": {},
               "additionalProperties": false

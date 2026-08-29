@@ -1,0 +1,18 @@
+---
+import LitWidget from "../components/LitWidget";
+import PreactWidget from "../components/PreactWidget";
+import ReactWidget from "../components/ReactWidget";
+import SolidWidget from "../components/SolidWidget";
+import SvelteWidget from "../components/SvelteWidget.svelte";
+import VueWidget from "../components/VueWidget.vue";
+---
+
+<main>
+  <h1>Multiple UI integrations</h1>
+  <ReactWidget client:load />
+  <PreactWidget client:idle />
+  <VueWidget client:visible />
+  <SvelteWidget client:load />
+  <SolidWidget client:media="(min-width: 640px)" />
+  <LitWidget client:only="lit" />
+</main>

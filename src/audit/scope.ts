@@ -8,8 +8,8 @@ import { splitTextLines } from "./rules/helpers.js";
 import type { AuditFinding, AuditScopeResult } from "./rule.js";
 
 const execFileAsync = promisify(execFile);
-const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]);
-const excludedDirectoryNames = new Set(["node_modules", "dist", ".next", "coverage"]);
+const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".astro"]);
+const excludedDirectoryNames = new Set(["node_modules", "dist", ".next", ".astro", "coverage"]);
 const defaultExcludes = [...excludedDirectoryNames].flatMap((directory) => [`${directory}/**`, `**/${directory}/**`]);
 
 export interface ResolveScopeOptions {

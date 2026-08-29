@@ -1,7 +1,7 @@
 {
   "name": "@node-boost/node-boost",
-  "version": "0.4.0",
-  "description": "CLI and MCP guidance layer for Node/React projects.",
+  "version": "0.5.0",
+  "description": "CLI and MCP guidance layer for Node, Astro, and React projects.",
   "type": "module",
   "license": "MIT",
   "author": "Gracjan Kubicki",
@@ -19,6 +19,7 @@
   },
   "keywords": [
     "node",
+    "astro",
     "react",
     "nextjs",
     "vite",
@@ -49,7 +50,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "npm run build:schema && tsup",
@@ -66,6 +67,7 @@
     "prepublishOnly": "npm run check && npm run smoke:pack && npm run smoke:plugin"
   },
   "dependencies": {
+    "@astrojs/compiler": "^4.0.0",
     "@clack/prompts": "^1.7.0",
     "citty": "^0.2.2",
     "picomatch": "^4.0.5",

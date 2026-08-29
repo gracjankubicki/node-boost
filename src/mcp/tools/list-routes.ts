@@ -1,8 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { detectStack } from "../../detect/stack.js";
+import { inspectAstroProject } from "../../astro/project.js";
 
-export type RouteType = "page" | "layout" | "route-handler" | "error" | "loading" | "not-found" | "middleware" | "api-route";
+export type RouteType = "page" | "layout" | "route-handler" | "error" | "loading" | "not-found" | "middleware" | "api-route" | "endpoint";
 
 export interface RouteEntry {
   path: string;
@@ -10,6 +11,8 @@ export interface RouteEntry {
   file: string;
   dynamic: string[];
   slot?: string;
+  rendering?: "static" | "on-demand";
+  partial?: boolean;
 }
 
 export interface UnsupportedRoutes {
@@ -31,6 +34,11 @@ const supportedExtensions = new Set(["js", "jsx", "ts", "tsx", "mdx"]);
 
 export async function listRoutesTool(rootDir: string): Promise<RouteEntry[] | UnsupportedRoutes> {
   const stack = await detectStack(rootDir);
+
+  if (stack.name === "astro" && stack.astro) {
+    const project = await inspectAstroProject(rootDir, stack.astro);
+    return project.routes;
+  }
 
   if (stack.name === "vite-react") {
     return {

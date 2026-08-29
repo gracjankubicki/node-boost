@@ -1,6 +1,6 @@
 import { Node, SyntaxKind, type CallExpression, type Expression, type SourceFile } from "ts-morph";
 import type { AuditFile, AuditRule } from "../rule.js";
-import { dataLayerGlobs, environmentAccesses, finding, isConfigFile, isDataLayerFile } from "./helpers.js";
+import { dataLayerGlobs, environmentAccesses, finding, isConfigFile, isDataLayerFile, sourceLineNumber } from "./helpers.js";
 
 const runtimeSchemaPackages = new Set(["zod", "valibot"]);
 
@@ -16,7 +16,7 @@ export const typedContractRules: AuditRule[] = [
     code: "unvalidated-boundary",
     architecture: "typed-contracts",
     defaultSeverity: "warn",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       const globs = dataLayerGlobs(context.ruleOptions);
@@ -35,7 +35,7 @@ export const typedContractRules: AuditRule[] = [
     code: "env-outside-env-file",
     architecture: "typed-contracts",
     defaultSeverity: "warn",
-    stacks: ["next", "vite-react"],
+    stacks: ["next", "vite-react", "astro"],
     kind: "ast",
     check(context) {
       const envFiles = envFileGlobs(context.ruleOptions);
@@ -60,7 +60,7 @@ function unvalidatedBoundaryFindings(file: AuditFile, configuredValidators: Set<
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .filter(isJsonBoundaryCall)
     .filter((call) => !isBoundaryValidated(call, sourceFile, bindings))
-    .map((call) => finding(file, "NB-ARCH-007", "unvalidated-boundary", call.getStartLineNumber()));
+    .map((call) => finding(file, "NB-ARCH-007", "unvalidated-boundary", sourceLineNumber(file, call.getStartLineNumber())));
 }
 
 function isJsonBoundaryCall(call: CallExpression): boolean {

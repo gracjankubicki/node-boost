@@ -1,0 +1,13 @@
+---
+import LeakyIsland from "../components/LeakyIsland";
+
+const userHtml = Astro.url.searchParams.get("html") ?? "<p>untrusted</p>";
+const publicDatabasePassword = import.meta.env.PUBLIC_DATABASE_PASSWORD;
+---
+
+<main>
+  <h1>Dirty Astro fixture</h1>
+  <LeakyIsland client:load />
+  <div set:html={userHtml}></div>
+  <p>{publicDatabasePassword}</p>
+</main>

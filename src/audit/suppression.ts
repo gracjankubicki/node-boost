@@ -65,12 +65,43 @@ function scanDirectives(content: string): SuppressionDirective[] {
     token = scanner.scan();
   }
 
-  return directives;
+  return [...directives, ...scanHtmlDirectives(content)];
 }
 
 function directivesFromComment(comment: string, position: number, source: string, fileLevel: boolean): SuppressionDirective[] {
   const bodyStart = position + 2;
   const bodyEnd = comment.startsWith("/*") ? position + comment.length - 2 : position + comment.length;
+  return directivesFromBody(source, bodyStart, bodyEnd, fileLevel);
+}
+
+function scanHtmlDirectives(source: string): SuppressionDirective[] {
+  const directives: SuppressionDirective[] = [];
+  let commentStart = source.indexOf("<!--");
+
+  while (commentStart !== -1) {
+    const commentEnd = source.indexOf("-->", commentStart + 4);
+    if (commentEnd === -1) {
+      break;
+    }
+
+    directives.push(...directivesFromBody(
+      source,
+      commentStart + 4,
+      commentEnd,
+      source.slice(0, commentStart).trim().length === 0,
+    ));
+    commentStart = source.indexOf("<!--", commentEnd + 3);
+  }
+
+  return directives;
+}
+
+function directivesFromBody(
+  source: string,
+  bodyStart: number,
+  bodyEnd: number,
+  fileLevel: boolean,
+): SuppressionDirective[] {
   const directives: SuppressionDirective[] = [];
   let lineStart = bodyStart;
 

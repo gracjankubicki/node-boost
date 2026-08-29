@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import packageJson from "../../package.json" with { type: "json" };
 import { buildInstallOperations, runInstall, runUpdate } from "../../src/install/orchestrator.js";
 import { detectStack } from "../../src/detect/stack.js";
 import { createPackageCommand } from "../../src/agents/agent.js";
@@ -44,6 +45,45 @@ describe("install orchestrator", () => {
       await expectPath(projectRoot, ".cursor/rules/node-boost.mdc");
       await expectPath(projectRoot, ".cursor/mcp.json");
       await expectPath(projectRoot, "node-boost.json");
+    });
+  });
+
+  it("installs, updates, and diagnoses an Astro project idempotently", async () => {
+    await withFixture("astro-react", async (projectRoot) => {
+      const first = await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+      const installedTree = await snapshotTree(projectRoot);
+      const second = await runInstall({ cwd: projectRoot, packageRoot: repoRoot, noInteraction: true });
+
+      expect(first.stack.name).toBe("astro");
+      expect(first.stack.astro).toMatchObject({ major: 6, rendering: "mixed", uiIntegrations: ["react"] });
+      expect(second.operations.every((operation) => operation.status === "skipped")).toBe(true);
+      expect(await snapshotTree(projectRoot)).toEqual(installedTree);
+
+      await expectPath(projectRoot, ".ai/guidelines/astro/core.md");
+      await expectPath(projectRoot, ".ai/guidelines/astro/astro/6.md");
+      await expectPath(projectRoot, ".ai/guidelines/frameworks/react/core.md");
+      await expectPath(projectRoot, ".ai/skills/astro/astro-development/SKILL.md");
+      await expectPath(projectRoot, ".ai/skills/frameworks/react/development/SKILL.md");
+      await expectPath(projectRoot, ".ai/guidelines/architectures/rendering-strategy.md");
+
+      const config = JSON.parse(await readFile(join(projectRoot, "node-boost.json"), "utf8")) as {
+        stack: string;
+        architectures: unknown[];
+      };
+      expect(config.stack).toBe("astro");
+      expect(config.architectures).toContain("rendering-strategy");
+      await expect(readFile(
+        join(projectRoot, ".ai/guidelines/architectures/rendering-strategy.md"),
+        "utf8",
+      )).resolves.toContain("# Rendering Strategy: Mixed");
+
+      const doctor = await doctorTool(projectRoot, packageJson.version);
+      expect(doctor.ok).toBe(true);
+      expect(doctor.checks).toContainEqual(expect.objectContaining({ id: "stack-detected", status: "pass" }));
+      expect(doctor.checks).toContainEqual(expect.objectContaining({ id: "resources-fresh", status: "pass" }));
+
+      const update = await runUpdate({ cwd: projectRoot, packageRoot: repoRoot });
+      expect(update.operations.every((operation) => operation.status === "skipped")).toBe(true);
     });
   });
 

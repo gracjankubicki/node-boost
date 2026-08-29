@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 - 2026-08-29
+
+- Raised the minimum supported Node.js runtime from 20 to 22.12.0 and aligned the build,
+  CI, smoke, and publish workflows with Node.js 22 and 24.
+- Added first-class Astro 5–7 application support with capability-aware static detection,
+  Astro and UI-framework resources, routes and islands MCP tools, `.astro` audit parsing,
+  Astro-specific security and compatibility checks, and static, mixed, server, and
+  multi-framework fixtures.
+
 ## 0.4.0 - 2026-08-06
 
 - Added capability-aware stack detection for React Compiler and Next Cache Components using structural config parsing.

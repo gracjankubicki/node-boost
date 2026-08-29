@@ -64,7 +64,7 @@ export async function doctorTool(rootDir: string, boostVersion: string): Promise
   checks.push({
     id: "stack-detected",
     status: stack.name === "unknown" ? "fail" : "pass",
-    message: stack.name === "unknown" ? "No supported React stack detected." : `Detected ${stack.name}.`,
+    message: stack.name === "unknown" ? "No supported application stack detected." : `Detected ${stack.name}.`,
   });
 
   if (!boostConfig.config) {

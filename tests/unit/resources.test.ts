@@ -22,7 +22,10 @@ describe("resources", () => {
 
   it("keeps every explain registry rule represented in its architecture guideline", async () => {
     for (const entry of explainEntries.values()) {
-      const files = await walk(join(repoRoot, "resources", "react", "architectures", entry.architecture));
+      const files = (await Promise.all([
+        walk(join(repoRoot, "resources", "react", "architectures", entry.architecture)),
+        walk(join(repoRoot, "resources", "stacks", "astro", "architectures", entry.architecture)),
+      ])).flat();
       const guidelineText = (await Promise.all(files.filter((file) => file.endsWith(".md")).map((file) => readFile(file, "utf8")))).join("\n");
 
       expect(guidelineText, `${entry.rule} ${entry.architecture}`).toContain(entry.rule);
@@ -31,7 +34,7 @@ describe("resources", () => {
 });
 
 async function walk(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   const nested = await Promise.all(
     entries.map(async (entry) => {
       const path = join(dir, entry.name);

@@ -3,7 +3,7 @@ import { auditRuleOptionSchemas, isAuditRuleId } from "../audit/definitions.js";
 
 export const agentNameSchema = z.enum(["claude-code", "codex", "cursor"]);
 
-export const stackNameSchema = z.enum(["next", "vite-react", "react-generic", "unknown"]);
+export const stackNameSchema = z.enum(["next", "vite-react", "astro", "react-generic", "unknown"]);
 
 export const architectureSlugSchema = z.enum([
   "feature-modules",
@@ -19,6 +19,11 @@ export const architectureSlugSchema = z.enum([
   "secure-by-default",
   "modern-typescript",
   "ui-states",
+  "islands-architecture",
+  "rendering-strategy",
+  "content-modeling",
+  "request-boundaries",
+  "multi-framework-boundaries",
 ]);
 
 const pluginPackageNameSchema = z.string().refine(isPluginPackageName, "Invalid plugin package name.");
@@ -28,6 +33,7 @@ const pluginVariantSchema = z.string().refine(isPluginSlug, "Invalid plugin vari
 export const auditSeveritySchema = z.enum(["off", "warn", "err"]);
 
 export const featureModulesBoundarySchema = z.enum(["public-api", "forbid"]);
+export const renderingStrategyVariantSchema = z.enum(["static-first", "server-first", "mixed"]);
 
 const nonFeatureModuleArchitectureSlugSchema = z.enum([
   "server-first-components",
@@ -42,6 +48,10 @@ const nonFeatureModuleArchitectureSlugSchema = z.enum([
   "secure-by-default",
   "modern-typescript",
   "ui-states",
+  "islands-architecture",
+  "content-modeling",
+  "request-boundaries",
+  "multi-framework-boundaries",
 ]);
 
 export const architectureEntrySchema = z.union([
@@ -50,6 +60,10 @@ export const architectureEntrySchema = z.union([
   z.strictObject({
     name: z.literal("feature-modules"),
     boundary: featureModulesBoundarySchema.default("public-api"),
+  }),
+  z.strictObject({
+    name: z.literal("rendering-strategy"),
+    variant: renderingStrategyVariantSchema.optional(),
   }),
   z.strictObject({
     name: nonFeatureModuleArchitectureSlugSchema,
@@ -192,6 +206,13 @@ export function normalizeArchitectures(config: Pick<NodeBoostConfig, "architectu
       return {
         name: architecture.name,
         options: { boundary: architecture.boundary },
+      };
+    }
+
+    if (architecture.name === "rendering-strategy" && "variant" in architecture) {
+      return {
+        name: architecture.name,
+        options: architecture.variant ? { variant: architecture.variant } : {},
       };
     }
 
