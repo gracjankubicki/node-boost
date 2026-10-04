@@ -20,14 +20,28 @@ const cursorPayloadSchema = z.object({
   loop_count: z.number().int().nonnegative(),
 });
 
+const toolInputSchema = z.object({ file_path: z.string().optional(), command: z.string().optional() });
+const editPayloadSchema = z.object({
+  session_id: z.string().min(1), cwd: z.string().min(1),
+  hook_event_name: z.literal("PostToolUse"), tool_name: z.string().min(1),
+  tool_input: toolInputSchema,
+});
+const cursorEditPayloadSchema = z.object({
+  hook_event_name: z.literal("postToolUse"),
+  cwd: z.string().min(1), tool_name: z.string().min(1), tool_input: toolInputSchema,
+});
+
+export type EditHookPayload = (z.infer<typeof editPayloadSchema> & { agent: "codex" | "claude-code" })
+  | (z.infer<typeof cursorEditPayloadSchema> & { agent: "cursor" });
+
 export type CodexHookPayload = z.infer<typeof codexPayloadSchema> & { agent: "codex" };
 export type ClaudeCodeHookPayload = z.infer<typeof claudeCodePayloadSchema> & { agent: "claude-code" };
 export type CursorHookPayload = z.infer<typeof cursorPayloadSchema> & { agent: "cursor" };
-export type HookPayload = CodexHookPayload | ClaudeCodeHookPayload | CursorHookPayload;
+export type HookPayload = CodexHookPayload | ClaudeCodeHookPayload | CursorHookPayload | EditHookPayload;
 
 export class InvalidHookPayloadError extends Error {
   constructor(agent: string) {
-    super(`Invalid ${agent} hook payload. Expected valid JSON for the supported Stop event.`);
+    super(`Invalid ${agent} hook payload. Expected valid JSON for a supported Stop or post-tool event.`);
     this.name = "InvalidHookPayloadError";
   }
 }
@@ -46,7 +60,9 @@ export function parseHookPayload(agent: AgentName, raw: string): HookPayload {
     : agent === "claude-code"
       ? claudeCodePayloadSchema
       : cursorPayloadSchema;
-  const result = schema.safeParse(input);
+  const event = typeof input === "object" && input !== null && "hook_event_name" in input ? input.hook_event_name : null;
+  const result = (event === "PostToolUse" && agent !== "cursor" ? editPayloadSchema
+    : event === "postToolUse" && agent === "cursor" ? cursorEditPayloadSchema : schema).safeParse(input);
 
   if (!result.success) {
     throw new InvalidHookPayloadError(agent);
@@ -56,10 +72,10 @@ export function parseHookPayload(agent: AgentName, raw: string): HookPayload {
 }
 
 export function hookPayloadRoot(payload: HookPayload): string {
-  return payload.agent === "cursor" ? payload.workspace_roots[0] : payload.cwd;
+  return "cwd" in payload ? payload.cwd : payload.workspace_roots[0];
 }
 
 export function isHookReentry(payload: HookPayload): boolean {
-  return (payload.agent === "claude-code" && payload.stop_hook_active)
-    || (payload.agent === "cursor" && payload.loop_count > 0);
+  return ("stop_hook_active" in payload && payload.stop_hook_active)
+    || ("loop_count" in payload && payload.loop_count > 0);
 }

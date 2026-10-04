@@ -165,7 +165,9 @@ async function readAstroConfig(
       sessions: config.getProperty("session") !== undefined,
       routeCache: config.getProperty("cache") !== undefined,
       i18n: config.getProperty("i18n") !== undefined,
-      dynamic: false,
+      dynamic: config.getProperties().some(Node.isSpreadAssignment)
+        || Boolean(config.getProperty("output") && outputValue !== "server" && outputValue !== "static")
+        || Boolean(config.getProperty("adapter") && !adapterPackage),
     };
   }
 

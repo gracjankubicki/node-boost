@@ -64,6 +64,9 @@ export interface DetectedStack {
   linting: LintingKind;
   packageManager: PackageManagerInfo;
   packages: Record<string, PackageInfo>;
+  rendering?: import("./detect/rendering.js").RenderingFacts;
+  testTools?: string[];
+  nodeTest?: import("./detect/testing.js").NodeTestCapability | null;
   capabilities: DetectedCapabilities;
   astro: AstroProjectProfile | null;
   warnings: string[];

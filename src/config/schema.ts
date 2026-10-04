@@ -1,3 +1,4 @@
+import { profileNames, profileSupportsStack } from "./profiles.js";
 import { z } from "zod";
 import { auditRuleOptionSchemas, isAuditRuleId } from "../audit/definitions.js";
 
@@ -141,13 +142,24 @@ export const nodeBoostConfigSchema = z.object({
   version: z.literal(1),
   generatedWith: z.string().min(1),
   stack: stackNameSchema,
+  profile: z.enum(profileNames).optional(),
   agents: z.array(agentNameSchema).default([]),
   hookAgents: z.array(agentNameSchema).optional(),
+  skillLayout: z.enum(["mirrored", "single-agent"]).optional(),
   plugins: z.array(pluginPackageNameSchema).optional(),
   features: featuresSchema.default(defaultFeatures),
   architectures: z.array(architectureEntrySchema).default([]),
   audit: auditSchema,
 }).superRefine((config, context) => {
+  if (config.profile && !profileSupportsStack(config.profile, config.stack)) {
+    context.addIssue({ code: "custom", path: ["profile"], message: `Profile ${config.profile} does not support stack ${config.stack}.` });
+  }
+  if (config.profile === "static-content-site" && config.architectures.some((entry) => typeof entry !== "string" && entry.name === "rendering-strategy" && "variant" in entry && entry.variant && entry.variant !== "static-first")) {
+    context.addIssue({ code: "custom", path: ["architectures"], message: "static-content-site requires rendering-strategy static-first." });
+  }
+  if (config.skillLayout === "single-agent" && (config.agents.length !== 1 || config.agents[0] === "cursor")) {
+    context.addIssue({ code: "custom", path: ["skillLayout"], message: "single-agent skills require exactly one agent: codex or claude-code." });
+  }
   for (const hookAgent of config.hookAgents ?? []) {
     if (!config.agents.includes(hookAgent)) {
       context.addIssue({

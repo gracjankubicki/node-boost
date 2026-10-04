@@ -23,6 +23,14 @@
         "unknown"
       ]
     },
+    "profile": {
+      "type": "string",
+      "enum": [
+        "static-content-site",
+        "server-app",
+        "spa"
+      ]
+    },
     "agents": {
       "default": [],
       "type": "array",
@@ -45,6 +53,13 @@
           "cursor"
         ]
       }
+    },
+    "skillLayout": {
+      "type": "string",
+      "enum": [
+        "mirrored",
+        "single-agent"
+      ]
     },
     "plugins": {
       "type": "array",
@@ -249,6 +264,9 @@
               "NB-ARCH-012",
               "NB-ARCH-013",
               "NB-ARCH-014",
+              "NB-ARCH-015",
+              "NB-PROFILE-001",
+              "NB-PROFILE-002",
               "NB-ASTRO-001",
               "NB-ASTRO-002",
               "NB-ASTRO-003",
@@ -394,6 +412,21 @@
               "additionalProperties": false
             },
             "NB-ARCH-014": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-ARCH-015": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-PROFILE-001": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "NB-PROFILE-002": {
               "type": "object",
               "properties": {},
               "additionalProperties": false

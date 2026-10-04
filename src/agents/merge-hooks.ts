@@ -8,6 +8,7 @@ export function mergeClaudeCodeHooks(existingContent: string | null, command: Mc
   const stop = asArray(hooks.Stop);
 
   hooks.Stop = appendCommandHook(stop, commandString(command), true);
+  hooks.PostToolUse = appendEditingHook(asArray(hooks.PostToolUse), commandString(command));
   root.hooks = hooks;
 
   return `${JSON.stringify(sortJson(root), null, 2)}\n`;
@@ -19,6 +20,7 @@ export function mergeCodexHooks(existingContent: string | null, command: McpComm
   const stop = asArray(hooks.Stop);
 
   hooks.Stop = appendCommandHook(stop, commandString(command), true);
+  hooks.PostToolUse = appendEditingHook(asArray(hooks.PostToolUse), commandString(command));
   root.hooks = hooks;
 
   return `${JSON.stringify(sortJson(root), null, 2)}\n`;
@@ -33,6 +35,9 @@ export function mergeCursorHooks(existingContent: string | null, command: McpCom
   hooks.stop = stop.some((entry) => isObject(entry) && entry.command === commandValue)
     ? stop
     : [...stop, { command: commandValue }];
+  const edits = asArray(hooks.postToolUse);
+  hooks.postToolUse = edits.some((entry) => isObject(entry) && entry.command === commandValue && entry.matcher === "Write|Edit")
+    ? edits : [...edits, { matcher: "Write|Edit", command: commandValue }];
   root.version = typeof root.version === "number" ? root.version : 1;
   root.hooks = hooks;
 
@@ -40,11 +45,11 @@ export function mergeCursorHooks(existingContent: string | null, command: McpCom
 }
 
 export function removeClaudeCodeHooks(existingContent: string | null): string | null {
-  return removeGroupedHooks(existingContent, "Stop", "claude-code");
+  return removeGroupedHooks(removeGroupedHooks(existingContent, "PostToolUse", "claude-code"), "Stop", "claude-code");
 }
 
 export function removeCodexHooks(existingContent: string | null): string | null {
-  return removeGroupedHooks(existingContent, "Stop", "codex");
+  return removeGroupedHooks(removeGroupedHooks(existingContent, "PostToolUse", "codex"), "Stop", "codex");
 }
 
 export function removeCursorHooks(existingContent: string | null): string | null {
@@ -54,13 +59,13 @@ export function removeCursorHooks(existingContent: string | null): string | null
 
   const root = parseObject(existingContent);
   const hooks = asObject(root.hooks);
-  const stop = asArray(hooks.stop);
-  if (!stop.some((entry) => isObject(entry) && isNodeBoostHookCommand(entry.command, "cursor"))) {
-    return existingContent;
+  let changed = false;
+  for (const event of ["stop", "postToolUse"]) {
+    const entries = asArray(hooks[event]);
+    const kept = entries.filter((entry) => !isObject(entry) || !isNodeBoostHookCommand(entry.command, "cursor"));
+    if (kept.length !== entries.length) { hooks[event] = kept; changed = true; }
   }
-  hooks.stop = stop.filter((entry) =>
-    !isObject(entry) || !isNodeBoostHookCommand(entry.command, "cursor"),
-  );
+  if (!changed) return existingContent;
   root.hooks = hooks;
   return `${JSON.stringify(sortJson(root), null, 2)}\n`;
 }
@@ -102,6 +107,11 @@ function isNodeBoostHookCommand(value: unknown, agent: string): boolean {
     && parts[executable + 1] === "guard"
     && parts[executable + 2] === "--hook"
     && parts[executable + 3] === agent;
+}
+
+function appendEditingHook(entries: unknown[], command: string): unknown[] {
+  if (entries.some((entry) => isObject(entry) && entry.matcher === "Write|Edit" && hookGroupHasCommand(entry, command))) return entries;
+  return [...entries, { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: 30 }] }];
 }
 
 function appendCommandHook(entries: unknown[], command: string, includeType: boolean): unknown[] {

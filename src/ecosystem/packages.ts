@@ -65,6 +65,8 @@ export const trackedPackageNames = [
   "vitest",
   "jest",
   "playwright",
+  "@playwright/test",
+  "cypress",
   "eslint",
   "prettier",
   "@biomejs/biome",

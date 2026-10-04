@@ -7,6 +7,7 @@ export const installCommand = defineCommand({
     description: "Generate node-boost guidelines, skills, config, and agent files.",
   },
   args: {
+    profile: { type: "string", description: "Declare intent: static-content-site, server-app, or spa.", required: false },
     interaction: {
       type: "boolean",
       description: "Prompt before writing files. Use --no-interaction for detected defaults.",
@@ -14,7 +15,7 @@ export const installCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const result = await runInstall({ noInteraction: args.interaction === false });
+    const result = await runInstall({ noInteraction: args.interaction === false, profile: args.profile });
     const counts = countStatuses(result.operations);
 
     console.log(`node-boost install: created ${counts.created}, updated ${counts.updated}, deleted ${counts.deleted}, conflicts ${counts.conflict}, skipped ${counts.skipped}`);

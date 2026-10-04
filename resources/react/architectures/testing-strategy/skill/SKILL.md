@@ -18,3 +18,5 @@ Use when adding tests, fixing a bug, or reviewing test quality.
 5. Pure logic → unit test; complex hooks → `renderHook` when available; async Server Components → data-layer/integration/E2E coverage according to the current stack.
 6. Update a critical E2E journey only when an E2E runner is installed. Adding new test infrastructure is a separate explicit architectural change.
 7. Run the repository's documented focused and full commands, including wrappers, generation, or i18n prerequisites.
+
+When the repository uses `node:test`, preserve that runner and its scripts. Native erasable TypeScript needs Node 22.18 or 23.6+, or Node 22.6+ with `--experimental-strip-types`. Type stripping is not typechecking. Read the Node TypeScript support documentation and project runtime constraints before changing commands.

@@ -15,6 +15,9 @@ export const auditRuleIds = [
   "NB-ARCH-012",
   "NB-ARCH-013",
   "NB-ARCH-014",
+  "NB-ARCH-015",
+  "NB-PROFILE-001",
+  "NB-PROFILE-002",
   "NB-ASTRO-001",
   "NB-ASTRO-002",
   "NB-ASTRO-003",
@@ -52,6 +55,9 @@ export const auditRuleOptionSchemas: Record<AuditRuleId, z.ZodType> = {
   "NB-ARCH-012": noOptions,
   "NB-ARCH-013": noOptions,
   "NB-ARCH-014": noOptions,
+  "NB-ARCH-015": noOptions,
+  "NB-PROFILE-001": noOptions,
+  "NB-PROFILE-002": noOptions,
   "NB-ASTRO-001": noOptions,
   "NB-ASTRO-002": noOptions,
   "NB-ASTRO-003": noOptions,
@@ -115,6 +121,18 @@ export const auditRuleMetadata: Record<AuditRuleId, { description: string; fix: 
   "NB-ARCH-014": {
     description: "Source code should avoid explicit any outside tests and declarations.",
     fix: "Replace any with a concrete, unknown, or generic type.",
+  },
+  "NB-PROFILE-001": {
+    description: "The source or rendering configuration violates the declared project profile.",
+    fix: "Remove the conflicting server capability, or explicitly change the user-owned profile after agreeing the hosting contract.",
+  },
+  "NB-PROFILE-002": {
+    description: "Dynamic configuration prevents verifying the declared project profile.",
+    fix: "Use statically readable configuration or verify the rendering contract explicitly; no consumer configuration is executed.",
+  },
+  "NB-ARCH-015": {
+    description: "testing-strategy checks test presence, not a coverage percentage.",
+    fix: "Use the repository test runner or add behavior tests. Disable this project warning with audit.rules[\"NB-ARCH-015\"] = \"off\"; package.json cannot contain suppression comments.",
   },
   "NB-ASTRO-001": {
     description: "Hydrated Astro islands must not directly import server-only modules.",

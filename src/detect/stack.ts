@@ -1,3 +1,5 @@
+import { detectRendering } from "./rendering.js";
+import { detectTesting } from "./testing.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -46,6 +48,7 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
   const packageJson = await readPackageJson(rootDir);
   const packageManager = await detectPackageManager(rootDir);
   const packages = await detectPackages(rootDir, packageJson);
+  const testing = await detectTesting(rootDir, packages);
   const warnings: string[] = [];
 
   const name = detectStackName(packages);
@@ -71,7 +74,9 @@ export async function detectStack(rootDir: string): Promise<DetectedStack> {
     packageManager,
     packages,
     capabilities,
-    astro: astroDetection.profile,
+    ...testing,
+    ...(name === "next" || name === "vite-react" ? { rendering: await detectRendering(rootDir, name) } : {}),
+    astro: astroDetection.profile ? { ...astroDetection.profile, testTools: testing.testTools } : null,
     warnings,
   };
 }

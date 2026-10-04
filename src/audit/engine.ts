@@ -1,3 +1,4 @@
+import { profileSupportsStack } from "../config/profiles.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DiagnosticCategory, Project } from "ts-morph";
@@ -18,6 +19,7 @@ export interface RunAuditOptions {
   mode?: "all" | "changed" | "base" | "paths";
   base?: string;
   paths?: string[];
+  feedbackOnly?: boolean;
 }
 
 export class NodeBoostConfigMissingError extends Error {
@@ -36,6 +38,7 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
   const rootDir = options.rootDir ?? process.cwd();
   const config = await readConfig(rootDir);
   const stack = await detectStack(rootDir);
+  if (config.profile && !profileSupportsStack(config.profile, stack.name)) throw new Error(`Profile ${config.profile} does not support detected stack ${stack.name}.`);
   const scope = await resolveAuditScope({
     rootDir,
     config,
@@ -54,7 +57,7 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
   for (const rule of auditRules) {
     const severity = config.audit.rules[rule.id] ?? rule.defaultSeverity;
 
-    if (severity === "off" || !enabledArchitectures.has(rule.architecture) || !rule.stacks.includes(stack.name)) {
+    if (severity === "off" || !(rule.id.startsWith("NB-PROFILE-") ? config.profile : enabledArchitectures.has(rule.architecture)) || !rule.stacks.includes(stack.name)) {
       continue;
     }
 
@@ -64,6 +67,7 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
       config,
       files,
       allPaths: new Set(scope.allPaths),
+      testPaths: new Set(scope.testPaths ?? []),
       rule,
       severity,
       architectureOptions: enabledArchitectures.get(rule.architecture) ?? {},
@@ -84,8 +88,9 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
 
   findings.push(...moduleResolver.warnings());
 
-  const err = findings.filter((finding) => finding.sev === "err").length;
-  const warn = findings.filter((finding) => finding.sev === "warn").length;
+  const reportedFindings = options.feedbackOnly ? findings.filter((finding) => scope.files.includes(finding.file)) : findings;
+  const err = reportedFindings.filter((finding) => finding.sev === "err").length;
+  const warn = reportedFindings.filter((finding) => finding.sev === "warn").length;
 
   return {
     v: 1,
@@ -98,7 +103,7 @@ export async function runAudit(options: RunAuditOptions = {}): Promise<AuditResu
     skipped: files.filter((file) => file.skipped).length,
     suppressed,
     elapsedMs: Math.round(performance.now() - started),
-    findings: findings.sort(compareFindings),
+    findings: reportedFindings.sort(compareFindings),
   };
 }
 

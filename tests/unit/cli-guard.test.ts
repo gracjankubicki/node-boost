@@ -12,6 +12,21 @@ const tsxCli = join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
 const cliEntry = join(repoRoot, "src", "cli", "index.ts");
 
 describe("guard CLI", () => {
+  it.each(["codex", "claude-code", "cursor"] as const)("delivers nonblocking post-edit CLI feedback for %s", async (agent) => {
+    await withGitProject(async (root) => {
+      await writeFile(join(root, "src", "unsafe.ts"), "export const value = process.env.SECRET;\n");
+      const result = await runCliWithInput(root, ["guard", "--hook", agent], JSON.stringify({
+        session_id: "edit", cwd: root, hook_event_name: agent === "cursor" ? "postToolUse" : "PostToolUse",
+        tool_name: agent === "codex" ? "apply_patch" : "Write",
+        tool_input: agent === "codex" ? { command: "*** Begin Patch\n*** Update File: src/unsafe.ts\n@@\n*** End Patch" } : { file_path: join(root, "src", "unsafe.ts") },
+      }));
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("NB-ARCH-008");
+      expect(result.stdout).not.toContain('"continue":false');
+      expect(result.stdout).toContain(agent === "cursor" ? "additional_context" : "additionalContext");
+    });
+  }, 15_000);
+
   it("fails closed when a changed file cannot be parsed", async () => {
     await withGitProject(async (projectRoot) => {
       await writeFile(join(projectRoot, "src", "safe.ts"), "export const safe = true;\n", "utf8");

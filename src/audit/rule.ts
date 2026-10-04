@@ -43,6 +43,7 @@ export interface AuditRuleContext {
   config: NodeBoostConfig;
   files: AuditFile[];
   allPaths: Set<string>;
+  testPaths?: Set<string>;
   rule: AuditRule;
   severity: AuditSeverity;
   architectureOptions: Record<string, unknown>;
@@ -65,6 +66,7 @@ export interface AuditScopeResult {
   mode: "all" | "changed" | "base" | "paths";
   files: string[];
   allPaths: string[];
+  testPaths?: string[];
   warnings: AuditFinding[];
 }
 

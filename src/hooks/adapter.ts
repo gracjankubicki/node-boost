@@ -6,6 +6,7 @@ import { formatClaudeCodeHook } from "./claude-code.js";
 import { formatCodexHook } from "./codex.js";
 import { formatCursorHook } from "./cursor.js";
 import { hookPayloadRoot, InvalidHookPayloadError, isHookReentry, type HookPayload } from "./payload.js";
+import { runEditHook } from "./edit.js";
 
 export interface HookResponse {
   exitCode: number;
@@ -18,6 +19,8 @@ export async function runGuardHook(payload: HookPayload): Promise<HookResponse> 
   if (isHookReentry(payload)) {
     return continueHook(payload.agent);
   }
+
+  if ("tool_input" in payload) return runEditHook(rootDir, payload);
 
   const agent = payload.agent;
   const result = await runAudit({ rootDir, mode: "changed" });

@@ -21,6 +21,10 @@ export interface ApplicationInfo {
     reactCompiler: boolean;
     nextCacheComponents: boolean;
   };
+  declaredProfile: import("../../config/profiles.js").ProjectProfile | null;
+  rendering: import("../../detect/rendering.js").RenderingFacts | null;
+  testTools: string[];
+  nodeTest: import("../../detect/testing.js").NodeTestCapability | null;
   astro: AstroProjectProfile | null;
   warnings: string[];
   packages: Record<string, string>;
@@ -52,6 +56,10 @@ export async function applicationInfoTool(rootDir: string, boostVersion: string)
     },
     linting: stack.linting,
     capabilities: stack.capabilities,
+    declaredProfile: boostConfig.config?.profile ?? null,
+    rendering: stack.rendering ?? null,
+    testTools: stack.testTools ?? [],
+    nodeTest: stack.nodeTest ?? null,
     astro: stack.astro,
     warnings: stack.warnings,
     packages: detectedPackages(stack.packages),

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 - 2026-10-04
+
+- Preserve shared AGENTS.md/CLAUDE.md symlinks with one consistent managed block and idempotent update counts.
+- Add optional declared profiles for static content sites, server applications, and browser SPAs, with configuration validation and audit findings for contract drift.
+- Recognize node:test across supported stacks and warn once about absent test capabilities and files when testing-strategy is enabled.
+- Report edited-file findings through nonblocking post-tool hooks while retaining Stop guards.
+- Add an opt-in single-agent skill layout with ownership-aware migration and updated doctor checks.
+
 ## 0.5.0 - 2026-08-29
 
 - Raised the minimum supported Node.js runtime from 20 to 22.12.0 and aligned the build,

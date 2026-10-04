@@ -5,10 +5,11 @@ import { promisify } from "node:util";
 import picomatch from "picomatch";
 import type { NodeBoostConfig } from "../config/schema.js";
 import { splitTextLines } from "./rules/helpers.js";
+import { isTestFile } from "../detect/testing.js";
 import type { AuditFinding, AuditScopeResult } from "./rule.js";
 
 const execFileAsync = promisify(execFile);
-const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".astro"]);
+const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".astro"]);
 const excludedDirectoryNames = new Set(["node_modules", "dist", ".next", ".astro", "coverage"]);
 const defaultExcludes = [...excludedDirectoryNames].flatMap((directory) => [`${directory}/**`, `**/${directory}/**`]);
 
@@ -24,14 +25,17 @@ export async function resolveAuditScope(options: ResolveScopeOptions): Promise<A
   const warnings: AuditFinding[] = [];
   const rawFiles = await resolveRawFiles(options, warnings);
   const files = filterSourceFiles(rawFiles, options.config.audit.exclude);
-  const allPaths = options.mode === "all"
-    ? files
-    : filterSourceFiles(await walkFiles(options.rootDir), options.config.audit.exclude);
+  const fullPaths = options.mode === "all" ? rawFiles : await walkFiles(options.rootDir);
+  const allPaths = filterSourceFiles(fullPaths, options.config.audit.exclude);
+  const excluded = picomatch([...defaultExcludes, ...options.config.audit.exclude]);
+  const testPaths = fullPaths.filter((path) => !excluded(path) && isTestFile(path)
+    && (sourceExtensions.has(extname(path)) || path.endsWith(".cjs") || path.endsWith(".mjs")));
 
   return {
     mode: options.mode,
     files,
     allPaths,
+    testPaths,
     warnings,
   };
 }

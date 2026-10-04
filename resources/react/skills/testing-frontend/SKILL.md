@@ -17,3 +17,5 @@ Use when writing or fixing tests for components, hooks, or user flows.
 4. Cover only the remote-data states the view can enter. Pure logic → unit test; complex hooks → `renderHook` when available.
 5. Update critical journeys only when the repository has an E2E runner. Adding missing infrastructure is a separate decision.
 6. Bug fix? Reproduce it with the smallest relevant test, then fix and run repository-approved commands.
+
+When the repository uses `node:test`, preserve that runner and its scripts. Native erasable TypeScript needs Node 22.18 or 23.6+, or Node 22.6+ with `--experimental-strip-types`. Type stripping is not typechecking. Read the Node TypeScript support documentation and project runtime constraints before changing commands.

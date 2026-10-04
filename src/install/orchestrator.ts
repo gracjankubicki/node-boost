@@ -1,3 +1,5 @@
+import { profileArchitectures, profileGuidance, profileNames, profileSupportsStack, suggestedProfile, type ProjectProfile } from "../config/profiles.js";
+import { operationIdentity, shareInstructionBlocks } from "./shared-instructions.js";
 import { cancel, confirm, intro, isCancel, multiselect, outro, select } from "@clack/prompts";
 import { mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
@@ -47,6 +49,7 @@ export interface InstallOptions {
   cwd?: string;
   packageRoot?: string;
   noInteraction?: boolean;
+  profile?: string;
 }
 
 export interface UpdateOptions {
@@ -70,9 +73,10 @@ export async function runInstall(options: InstallOptions = {}): Promise<InstallR
   const packageRoot = options.packageRoot ?? (await resolveDefaultPackageRoot(import.meta.url));
   const projectRoot = await resolveProjectRoot(cwd);
   const stack = await detectStack(projectRoot);
+  const explicitProfile = options.profile === undefined ? undefined : nodeBoostConfigSchema.shape.profile.parse(options.profile);
   const config = options.noInteraction
-    ? await createDefaultConfig(packageRoot, projectRoot, stack)
-    : await promptForConfig(packageRoot, projectRoot, stack);
+    ? await createDefaultConfig(packageRoot, projectRoot, stack, explicitProfile)
+    : await promptForConfig(packageRoot, projectRoot, stack, explicitProfile);
   const operations = await buildInstallOperations({ packageRoot, projectRoot, stack, config });
   const applied = await applyFileOperations(projectRoot, operations, config.generatedWith);
 
@@ -117,6 +121,9 @@ export async function buildInstallOperations(input: {
   stack: DetectedStack;
   config: NodeBoostConfig;
 }): Promise<FileOperation[]> {
+  if (input.config.profile && !profileSupportsStack(input.config.profile, input.stack.name)) {
+    throw new Error(`Profile ${input.config.profile} does not support detected stack ${input.stack.name}.`);
+  }
   const architectures = input.config.features.architecture ? normalizeArchitectures(input.config) : [];
   const plugins = await loadNodeBoostPlugins(input.projectRoot, input.config.plugins ?? []);
   const pluginArchitectures = resolvePluginArchitectures(plugins, architectures, input.stack.name);
@@ -137,6 +144,11 @@ export async function buildInstallOperations(input: {
 
   const guidelineOperations = await readResourceOperations(input.packageRoot, selectedGuidelines);
   const skillOperations = await readResourceOperations(input.packageRoot, selectedSkills);
+  if (input.config.profile && input.config.features.skills) {
+    const path = ".ai/skills/project-profile/SKILL.md";
+    selectedSkills.push({ kind: "skill", sourcePath: path, outputPath: path });
+    skillOperations.push({ path, content: `---\nname: project-profile\ndescription: Preserve the declared ${input.config.profile} project contract.\n---\n\n${profileGuidance(input.config.profile)}` });
+  }
   const schemaOperation = {
     path: ".ai/node-boost.schema.json",
     content: await readSource(input.packageRoot, "schema.json"),
@@ -165,7 +177,9 @@ export async function buildInstallOperations(input: {
       .render({
         guidelinesIndexPath: ".ai/guidelines/node-boost.md",
         libraryDocsPath: ".ai/docs/llms.txt",
-        skillsIndexPath: ".ai/skills",
+        skillsIndexPath: input.config.skillLayout === "single-agent"
+          ? input.config.agents[0] === "codex" ? ".agents/skills" : ".claude/skills"
+          : ".ai/skills",
         selectedSkills,
         existingContent: (path) => shouldReadIntegrationContent(path, input.config.features, agentName, hookAgents)
           ? existingContent.get(path) ?? null
@@ -178,25 +192,29 @@ export async function buildInstallOperations(input: {
   );
   const cleanupOperations = buildIntegrationCleanupOperations(existingContent, input.config, hookAgents);
 
-  return dedupeOperations([
+  return shareInstructionBlocks(input.projectRoot, dedupeOperations([
     schemaOperation,
     {
       path: ".ai/docs/llms.txt",
       content: renderLibraryDocumentationLlmsTxt(input.stack),
     },
+    ...(input.config.profile ? [
+      { path: ".ai/guidelines/project-profile.md", content: profileGuidance(input.config.profile) },
+    ] : []),
     ...guidelineOperations,
     {
       path: ".ai/guidelines/node-boost.md",
-      content: renderGuidelinesIndex(input.stack, architectures, selectedGuidelines),
+      content: renderGuidelinesIndex(input.stack, architectures, selectedGuidelines)
+        + (input.config.profile ? `\n## Declared intent\n\nRead .ai/guidelines/project-profile.md (${input.config.profile}). This contract takes precedence over detected rendering recommendations.\n` : ""),
     },
-    ...skillOperations,
+    ...(input.config.skillLayout === "single-agent" ? [] : skillOperations),
     ...agentOperations,
     ...cleanupOperations,
     {
       path: "node-boost.json",
       content: `${JSON.stringify(input.config, null, 2)}\n`,
     },
-  ]);
+  ]));
 }
 
 function shouldReadIntegrationContent(
@@ -274,6 +292,15 @@ export async function applyFileOperations(
   operations: FileOperation[],
   generatedWith = "unknown",
 ): Promise<FileOperationResult[]> {
+  const identities = new Map<string, FileOperation>();
+  for (const operation of operations) {
+    const identity = await operationIdentity(projectRoot, operation.path);
+    const previous = identities.get(identity);
+    if (previous && previous.content !== operation.content) {
+      throw new Error(`Conflicting generated contents for ${previous.path} and ${operation.path}, sharing ${identity}.`);
+    }
+    identities.set(identity, operation);
+  }
   const results: FileOperationResult[] = [];
   const previousManifest = await readGeneratedManifest(projectRoot);
   const previousFiles = new Map((previousManifest?.files ?? []).map((file) => [file.path, file]));
@@ -294,7 +321,10 @@ export async function applyFileOperations(
       continue;
     }
 
-    if (hashGeneratedContent(current) === previous.sha256) {
+    if (identities.has(await operationIdentity(projectRoot, previous.path))) {
+      nextFiles.set(previous.path, previous);
+      results.push({ path: previous.path, content: current, status: "conflict" });
+    } else if (hashGeneratedContent(current) === previous.sha256) {
       await rm(target);
       await pruneEmptyDirectories(dirname(target), projectRoot);
       results.push({ path: previous.path, content: current, status: "deleted" });
@@ -395,7 +425,7 @@ async function resolveProjectRoot(cwd: string): Promise<string> {
   return projectRoot;
 }
 
-async function createDefaultConfig(packageRoot: string, projectRoot: string, stack: DetectedStack): Promise<NodeBoostConfig> {
+async function createDefaultConfig(packageRoot: string, projectRoot: string, stack: DetectedStack, profile?: ProjectProfile): Promise<NodeBoostConfig> {
   return nodeBoostConfigSchema.parse({
     $schema: localSchemaPath,
     version: 1,
@@ -404,7 +434,8 @@ async function createDefaultConfig(packageRoot: string, projectRoot: string, sta
     agents: allAgents,
     plugins: [],
     features: defaultFeatures,
-    architectures: await defaultArchitectures(projectRoot, stack),
+    ...(profile ? { profile } : {}),
+    architectures: profile ? profileArchitectures(profile, stack.name) : await defaultArchitectures(projectRoot, stack),
     audit: {
       exclude: [],
       rules: {},
@@ -413,7 +444,7 @@ async function createDefaultConfig(packageRoot: string, projectRoot: string, sta
   });
 }
 
-async function promptForConfig(packageRoot: string, projectRoot: string, stack: DetectedStack): Promise<NodeBoostConfig> {
+async function promptForConfig(packageRoot: string, projectRoot: string, stack: DetectedStack, profile?: ProjectProfile): Promise<NodeBoostConfig> {
   intro(`node-boost install: ${stack.name} / ${stack.packageManager.name}`);
 
   const agents = await multiselect<AgentName>({
@@ -448,7 +479,7 @@ async function promptForConfig(packageRoot: string, projectRoot: string, stack: 
 
   const hookAgents = featureConfig.hooks
     ? await multiselect<AgentName>({
-      message: "Select agents with blocking hooks",
+      message: "Select agents with audit hooks",
       options: agents.map((agent) => ({ label: agent, value: agent })),
       initialValues: [...agents],
       required: false,
@@ -456,8 +487,15 @@ async function promptForConfig(packageRoot: string, projectRoot: string, stack: 
     : [];
   abortIfCancelled(hookAgents);
 
+  const selectedProfile = profile ?? await select({
+    message: "Declare a project profile (optional; suggested from detected facts)",
+    options: [{ label: "No profile (detected defaults)", value: "none" }, ...profileNames.filter((name) => profileSupportsStack(name, stack.name)).map((name) => ({ label: name, value: name }))],
+    initialValue: suggestedProfile(stack) ?? "none",
+  });
+  abortIfCancelled(selectedProfile);
+  const declaredProfile = selectedProfile === "none" ? undefined : selectedProfile;
   const architectures = featureConfig.architecture
-    ? await promptArchitectures(projectRoot, stack)
+    ? declaredProfile ? profileArchitectures(declaredProfile, stack.name) : await promptArchitectures(projectRoot, stack)
     : [];
 
   const confirmed = await confirm({
@@ -478,6 +516,7 @@ async function promptForConfig(packageRoot: string, projectRoot: string, stack: 
     generatedWith: await readPackageVersion(packageRoot),
     stack: stack.name,
     agents,
+    ...(declaredProfile ? { profile: declaredProfile } : {}),
     hookAgents,
     plugins: [],
     features: featureConfig,

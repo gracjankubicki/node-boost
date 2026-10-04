@@ -22,7 +22,7 @@ function renderDoctor(result: DoctorResult): string {
 }
 
 function renderCheck(check: DoctorCheck): string {
-  const icon = check.status === "pass" ? "✔" : check.status === "warn" ? "⚠" : check.status === "skip" ? "−" : "✖";
+  const icon = check.status === "pass" ? "✔" : check.status === "warn" ? "⚠" : check.status === "skip" ? "−" : check.status === "info" ? "ℹ" : "✖";
   const details = check.details?.length ? `\n${check.details.map((detail) => `  - ${detail}`).join("\n")}` : "";
   return `${icon} ${check.id}: ${check.message}${details}`;
 }

@@ -1,3 +1,5 @@
+import { runAudit } from "../../audit/engine.js";
+import { profileSupportsStack } from "../../config/profiles.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { buildInstallOperations } from "../../install/orchestrator.js";
@@ -19,11 +21,12 @@ export type DoctorCheckId =
   | "agent-files-present"
   | "overrides-detected"
   | "hooks-wired"
-  | "lint-strict";
+  | "lint-strict"
+  | "profile-contract";
 
 export interface DoctorCheck {
   id: DoctorCheckId;
-  status: "pass" | "warn" | "fail" | "skip";
+  status: "pass" | "warn" | "fail" | "skip" | "info";
   message: string;
   details?: string[];
 }
@@ -89,6 +92,21 @@ export async function doctorTool(rootDir: string, boostVersion: string): Promise
   }
 
   const packageRoot = await resolveDefaultPackageRoot(import.meta.url);
+  if (boostConfig.config.profile) {
+    if (!profileSupportsStack(boostConfig.config.profile, stack.name)) {
+      checks.push({ id: "profile-contract", status: "fail", message: `Profile ${boostConfig.config.profile} does not support detected stack ${stack.name}.` });
+      return withOk(checks);
+    }
+    const audit = await runAudit({ rootDir, mode: "all" });
+    const profileFindings = audit.findings.filter((finding) => finding.rule.startsWith("NB-PROFILE-"));
+    const failed = profileFindings.some((finding) => finding.rule === "NB-PROFILE-001");
+    const unknown = profileFindings.some((finding) => finding.rule === "NB-PROFILE-002");
+    checks.push({ id: "profile-contract", status: failed ? "fail" : unknown ? "warn" : "info",
+      message: failed ? "Source violates the declared project profile." : unknown ? "Declared profile cannot be verified from dynamic configuration." : "Declared profile is compatible with detected facts; architecture overrides are preserved.",
+      details: profileFindings.map((finding) => `${finding.file}:${finding.line} ${finding.ref ?? finding.code}`),
+    });
+  }
+
   const expectedOperations = await buildInstallOperations({
     packageRoot,
     projectRoot: rootDir,

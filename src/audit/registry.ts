@@ -1,3 +1,5 @@
+import { profileRules } from "./rules/project-profile.js";
+import { testingStrategyRules } from "./rules/testing-strategy.js";
 import type { ArchitectureSlug } from "../types.js";
 import type { AuditRule, ExplainEntry } from "./rule.js";
 import { auditRuleIds, auditRuleMetadata, isAuditRuleId } from "./definitions.js";
@@ -21,6 +23,8 @@ export const auditRules: AuditRule[] = [
   ...secureByDefaultRules,
   ...modernTypeScriptRules,
   ...astroRules,
+  ...testingStrategyRules,
+  ...profileRules,
 ];
 
 const implementedRuleIds = new Set(auditRules.map((rule) => rule.id));
@@ -71,7 +75,7 @@ export const explainEntries = new Map<string, ExplainEntry>(auditRules.map((rule
       description: metadata.description,
       rationale: "This check enforces the selected node-boost architecture guideline and keeps generated agent feedback actionable.",
       fix: metadata.fix,
-      guideline: guidelineByArchitecture[rule.architecture],
+      guideline: rule.id.startsWith("NB-PROFILE-") ? ".ai/guidelines/project-profile.md" : guidelineByArchitecture[rule.architecture],
     },
   ];
 }));

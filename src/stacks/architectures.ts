@@ -22,6 +22,7 @@ export const tailwindArchitecture = "styling-tailwind" satisfies ArchitectureSlu
 
 export function inferredCommonArchitectures(stack: {
   packages: Record<string, { version: string | null } | undefined>;
+  testTools?: string[];
 }): ArchitectureSlug[] {
   const has = (packageName: string): boolean => Boolean(stack.packages[packageName]?.version);
   const architectures: ArchitectureSlug[] = ["secure-by-default"];
@@ -38,7 +39,7 @@ export function inferredCommonArchitectures(stack: {
     architectures.push("state-management");
   }
 
-  if (has("vitest") || has("jest") || has("playwright") || has("storybook") || has("@storybook/react")) {
+  if (stack.testTools?.includes("node:test") || has("vitest") || has("jest") || has("playwright") || has("storybook") || has("@storybook/react")) {
     architectures.push("testing-strategy");
   }
 

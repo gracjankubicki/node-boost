@@ -140,6 +140,34 @@ and request-dependent cached routes.
 Authoring custom Astro integrations, deployment adapters, themes, starters, and renderers is
 outside this application-support scope.
 
+## Declared project profiles
+
+Profiles are optional, user-owned intent. Install with `node-boost install --profile=static-content-site --no-interaction`, or select a profile interactively. Non-interactive installation without a profile keeps detected defaults. Interactive suggestions require confirmation and never override an explicit choice.
+
+| Profile | Compatible stack | Contract |
+| --- | --- | --- |
+| `static-content-site` | Astro, Next.js static export | Static output. Client interactivity and external APIs are allowed. Server adapters, Actions, server islands, and request-time routes violate the contract. Next must declare `output: 'export'`. |
+| `server-app` | Astro, Next.js | Server request handling is allowed. Static routes and static exports are also allowed. |
+| `spa` | Vite React | Browser application with optional external APIs. Own SSR and server endpoints violate the contract. |
+
+Fresh installation derives architecture defaults from the selected profile, including `testing-strategy`. For an existing project, add `profile` to `node-boost.json` and run `node-boost update`. Update preserves your architecture list, audit settings, and hook selection. Re-running install is not the migration path for existing configuration.
+
+Incompatible profile/stack combinations and `static-content-site` with a contradictory rendering variant fail validation. Change the profile explicitly when changing the hosting contract. `application_info` exposes `declaredProfile` separately from detected `rendering` and `astro` facts. Profile contract checks run independently of the enabled architecture list. `NB-PROFILE-001` reports violations and `NB-PROFILE-002` warns when dynamic configuration prevents verification. Configuration is never executed. `doctor` treats benign differences as informational and violations as failures.
+
+## Test presence
+
+`application_info.testTools` includes the built-in `node:test` runner when a supported runtime and a `node --test` script are detected. `nodeTest` reports the runtime source, original declaration, runner support and whether native erasable TypeScript is available. Unresolved project declarations such as `lts/iron` report a null runtime and unknown support instead of using the Node process that runs Boost. Node 22.18 and 23.6 enable stripping by default; Node 22.6 through 22.17 needs `--experimental-strip-types`. A JavaScript runner capability does not imply native TypeScript support. No test command is generated or assumed.
+
+With `testing-strategy` enabled, `NB-ARCH-015` warns once when neither a recognized tool nor test files are present after exclusions. It checks presence, not coverage percentage. Tests anywhere in the project count, including outside the current changed-file scope. Disable it with `audit.rules["NB-ARCH-015"] = "off"`. Existing configurations without `testing-strategy` remain opt-in; profiles enable it by default.
+
+## Skill copies and shared instructions
+
+By default `.ai/skills` holds the common source and Codex and Claude Code receive copies in their conventional discovery directories. Cursor reads the common index. The copies are deliberate for agent discovery and portability across Windows and fresh checkouts; Node Boost does not generate skill symlinks.
+
+For exactly one Codex or Claude Code agent, set `skillLayout: "single-agent"` in `node-boost.json` and run update. Skills are written only to that agent's directory and instruction pointers follow it. Switching back restores the common copies. The generated manifest removes only unchanged retired files; manual edits become conflicts and remain on disk.
+
+Existing `CLAUDE.md` symlinks to `AGENTS.md` are preserved. Node Boost composes one shared managed block for the enabled agents and leaves the surrounding hand-written instructions intact. Install, update, and doctor use the same desired contents. Repeating update leaves content and modification times unchanged.
+
 ## Hooks
 
 When `features.hooks` is enabled, node-boost wires `guard --hook <agent>` into each selected agent:
@@ -148,7 +176,13 @@ When `features.hooks` is enabled, node-boost wires `guard --hook <agent>` into e
 - Codex: `Stop` hook in `.codex/hooks.json`.
 - Cursor: `stop` hook in `.cursor/hooks.json`.
 
-The hook audits changed files. Error findings block or continue the agent in that agent's native protocol. Disable hooks by setting:
+Post-tool hooks report findings from edited files without blocking the completed edit:
+
+- Codex: `PostToolUse`, matched to `Write|Edit`; canonical `apply_patch` paths are read from patch headers.
+- Claude Code: `PostToolUse`, matched to `Write|Edit`; `tool_input.file_path` selects the file.
+- Cursor: `postToolUse`, matched to `Write|Edit`; feedback uses `additional_context`. `afterFileEdit` has no documented feedback output, so the generic post-tool event is used.
+
+Only existing source files inside the real project root are audited. Global project warnings are not repeated in edit feedback. Shell edits and unsupported tool payloads remain covered by Stop. The Stop hook audits changed files. Error findings block or continue the agent in that agent's native protocol. Disable hooks by setting:
 
 Hook payloads are validated against each agent's documented Stop protocol. Claude Code uses `stop_hook_active` and Cursor uses `loop_count` to prevent continuation loops; Codex uses `continue` and `stopReason`. The payload working directory selects the audited project only after absolute-directory validation.
 

@@ -66,7 +66,7 @@ export async function composeSkills(
   }
 
   if (
-    (stack.packages.vitest?.version ||
+    (stack.testTools?.includes("node:test") || stack.packages.vitest?.version ||
       stack.packages.jest?.version ||
       stack.packages.playwright?.version ||
       stack.packages.storybook?.version ||

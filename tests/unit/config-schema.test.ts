@@ -127,10 +127,10 @@ describe("nodeBoostConfigSchema", () => {
       stack: "next",
       audit: {
         exclude: [],
-        rules: { "NB-ARCH-015": "err" },
+        rules: { "NB-ARCH-999": "err" },
         ruleOptions: {},
       },
-    })).toThrow("Unknown audit rule NB-ARCH-015");
+    })).toThrow("Unknown audit rule NB-ARCH-999");
   });
 
   it("rejects options for unknown audit rules", () => {
