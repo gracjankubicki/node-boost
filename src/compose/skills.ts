@@ -2,6 +2,7 @@ import { join, posix } from "node:path";
 import { richTextPackageNames } from "../ecosystem/packages.js";
 import type { DetectedStack, NormalizedArchitecture, ResourceSelection } from "../types.js";
 import { listResourceFiles, resourceFileExists } from "./resources.js";
+import { composeVendorSkills } from "./vendor-skills.js";
 
 export async function composeSkills(
   rootDir: string,
@@ -91,7 +92,9 @@ export async function composeSkills(
     architecture,
   )));
 
-  return [...packageSkills, ...architectureSkills].sort((a, b) => a.outputPath.localeCompare(b.outputPath));
+  const vendorSkills = await composeVendorSkills(rootDir, stack);
+
+  return [...packageSkills, ...architectureSkills, ...vendorSkills].sort((a, b) => a.outputPath.localeCompare(b.outputPath));
 }
 
 async function composeAstroSkills(
@@ -137,7 +140,9 @@ async function composeAstroSkills(
     architecture,
   )));
 
-  return [...astroSkills, ...frameworkSkills, ...architectureSkills]
+  const vendorSkills = await composeVendorSkills(rootDir, stack);
+
+  return [...astroSkills, ...frameworkSkills, ...architectureSkills, ...vendorSkills]
     .sort((a, b) => a.outputPath.localeCompare(b.outputPath));
 }
 

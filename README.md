@@ -168,6 +168,19 @@ For exactly one Codex or Claude Code agent, set `skillLayout: "single-agent"` in
 
 Existing `CLAUDE.md` symlinks to `AGENTS.md` are preserved. Node Boost composes one shared managed block for the enabled agents and leaves the surrounding hand-written instructions intact. Install, update, and doctor use the same desired contents. Repeating update leaves content and modification times unchanged.
 
+## Bundled upstream skills
+
+node-boost also ships verbatim copies of Vercel's agent skills, so `install` and `update` write them alongside the built-in skills without a network call. Each skill is copied with its references and scripts into `.ai/skills/<name>/` and mirrored like any other skill.
+
+| Skills | Installed when |
+| --- | --- |
+| `next-dev-loop`, `next-cache-components-optimizer`, `next-cache-components-adoption`, `next-partial-prefetching-optimizer`, `next-partial-prefetching-adoption`, `next-bundle-optimizer` (from [vercel/next.js](https://github.com/vercel/next.js/tree/canary/skills)) | Next.js 16 or newer |
+| `vercel-react-best-practices`, `vercel-composition-patterns`, `vercel-react-view-transitions` (from [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)) | React is a dependency |
+| `web-design-guidelines` | Every supported stack |
+| `vercel-optimize` | Next.js and Astro |
+
+Upstream commits are pinned in `resources/vendor/skills/sources.json`; maintainers refresh them with `npm run sync:skills`. Generated skill directories are excluded from `audit` and `guard`. Shadow any file through `.node-boost/**`, or set `features.skills` to `false` to skip skills entirely.
+
 ## Hooks
 
 When `features.hooks` is enabled, node-boost wires `guard --hook <agent>` into each selected agent:

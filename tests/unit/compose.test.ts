@@ -6,6 +6,7 @@ import { composeSkills } from "../../src/compose/skills.js";
 import { detectStack } from "../../src/detect/stack.js";
 import { buildInstallOperations } from "../../src/install/orchestrator.js";
 import type { NodeBoostConfig } from "../../src/config/schema.js";
+import type { ResourceSelection } from "../../src/types.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -65,7 +66,7 @@ describe("resource composition", () => {
     const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
     const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
 
-    expect((await composeSkills(repoRoot, nextStack)).map((resource) => resource.sourcePath)).toEqual([
+    expect(builtInSkillPaths(await composeSkills(repoRoot, nextStack))).toEqual([
       "resources/react/skills/next-development/SKILL.md",
       "resources/react/skills/project-conventions-and-validation/SKILL.md",
       "resources/react/skills/react-development/SKILL.md",
@@ -73,12 +74,49 @@ describe("resource composition", () => {
       "resources/react/skills/testing-frontend/SKILL.md",
     ]);
 
-    expect((await composeSkills(repoRoot, viteStack)).map((resource) => resource.sourcePath)).toEqual([
+    expect(builtInSkillPaths(await composeSkills(repoRoot, viteStack))).toEqual([
       "resources/react/skills/project-conventions-and-validation/SKILL.md",
       "resources/react/skills/react-development/SKILL.md",
       "resources/react/skills/spa-routing/SKILL.md",
       "resources/react/skills/testing-frontend/SKILL.md",
     ]);
+  });
+
+  it("selects vendored upstream skills by stack", async () => {
+    const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
+    const astroStack = await detectStack(join(repoRoot, "tests", "fixtures", "astro-react"));
+    const legacyNextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    legacyNextStack.packages.next = { ...legacyNextStack.packages.next, version: "15.5.0", major: 15 };
+    const reactSkills = ["vercel-composition-patterns", "vercel-react-best-practices", "vercel-react-view-transitions"];
+    const withVercelOptimize = [...reactSkills, "vercel-optimize", "web-design-guidelines"].sort((a, b) => a.localeCompare(b));
+
+    expect(vendorSkillNames(await composeSkills(repoRoot, nextStack))).toEqual([
+      "next-bundle-optimizer",
+      "next-cache-components-adoption",
+      "next-cache-components-optimizer",
+      "next-dev-loop",
+      "next-partial-prefetching-adoption",
+      "next-partial-prefetching-optimizer",
+      "vercel-composition-patterns",
+      "vercel-optimize",
+      "vercel-react-best-practices",
+      "vercel-react-view-transitions",
+      "web-design-guidelines",
+    ]);
+    expect(vendorSkillNames(await composeSkills(repoRoot, legacyNextStack))).toEqual(withVercelOptimize);
+    expect(vendorSkillNames(await composeSkills(repoRoot, viteStack))).toEqual([...reactSkills, "web-design-guidelines"]);
+    expect(vendorSkillNames(await composeSkills(repoRoot, astroStack))).toEqual(withVercelOptimize);
+  });
+
+  it("copies every file of a vendored skill next to its SKILL.md", async () => {
+    const stack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    const outputPaths = (await composeSkills(repoRoot, stack)).map((resource) => resource.outputPath);
+
+    expect(outputPaths).toContain(".ai/skills/next-bundle-optimizer/SKILL.md");
+    expect(outputPaths).toContain(".ai/skills/next-bundle-optimizer/references/fix-patterns.md");
+    expect(outputPaths).toContain(".ai/skills/vercel-react-view-transitions/references/nextjs.md");
+    expect(outputPaths.some((path) => path.endsWith("metadata.json"))).toBe(false);
   });
 
   it("composes Astro, framework, and capability resources from one profile", async () => {
@@ -237,4 +275,14 @@ async function generatedGuidelines(stackName: "next" | "vite-react", stack: Awai
       .filter((operation) => operation.path.startsWith(".ai/guidelines/"))
       .map((operation) => [operation.path, operation.content]),
   );
+}
+
+function builtInSkillPaths(resources: ResourceSelection[]): string[] {
+  return resources.map((resource) => resource.sourcePath).filter((path) => !path.startsWith("resources/vendor/"));
+}
+
+function vendorSkillNames(resources: ResourceSelection[]): string[] {
+  return [...new Set(resources
+    .filter((resource) => resource.sourcePath.startsWith("resources/vendor/"))
+    .map((resource) => resource.outputPath.split("/")[2]))].sort((a, b) => a.localeCompare(b));
 }

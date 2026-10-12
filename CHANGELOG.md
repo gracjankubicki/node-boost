@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Bundle Vercel's Next.js 16 skills (dev loop, Cache Components, Partial Prefetching, bundle optimizer) and React/frontend skills (React best practices, composition patterns, view transitions, web design guidelines, Vercel optimize), selected by detected stack.
+- Exclude generated `.ai/skills`, `.claude/skills`, and `.agents/skills` directories from audit and guard scopes.
+
 ## 0.6.0 - 2026-10-04
 
 - Preserve shared AGENTS.md/CLAUDE.md symlinks with one consistent managed block and idempotent update counts.

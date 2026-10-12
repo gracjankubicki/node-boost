@@ -55,6 +55,7 @@
   "scripts": {
     "build": "npm run build:schema && tsup",
     "build:schema": "tsx scripts/generate-schema.ts",
+    "sync:skills": "tsx scripts/sync-vendor-skills.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",

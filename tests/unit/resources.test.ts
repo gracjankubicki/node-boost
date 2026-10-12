@@ -16,7 +16,9 @@ describe("resources", () => {
       expect(content, file).toMatch(/^---\n[\s\S]*?\n---/);
       expect(content, file).toMatch(/\nname:\s*\S+/);
       expect(content, file).toMatch(/\ndescription:\s*\S+/);
-      expect(content, file).toContain("## When to use this skill");
+      if (!file.includes(join("resources", "vendor"))) {
+        expect(content, file).toContain("## When to use this skill");
+      }
     }
   });
 
