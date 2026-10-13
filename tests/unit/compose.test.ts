@@ -84,6 +84,7 @@ describe("resource composition", () => {
 
   it("selects vendored upstream skills by stack", async () => {
     const nextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    nextStack.packages.next = { ...nextStack.packages.next, version: "16.3.0", major: 16 };
     const viteStack = await detectStack(join(repoRoot, "tests", "fixtures", "vite-app"));
     const astroStack = await detectStack(join(repoRoot, "tests", "fixtures", "astro-react"));
     const legacyNextStack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
@@ -111,6 +112,7 @@ describe("resource composition", () => {
 
   it("copies every file of a vendored skill next to its SKILL.md", async () => {
     const stack = await detectStack(join(repoRoot, "tests", "fixtures", "next-app"));
+    stack.packages.next = { ...stack.packages.next, version: "16.3.0", major: 16 };
     const outputPaths = (await composeSkills(repoRoot, stack)).map((resource) => resource.outputPath);
 
     expect(outputPaths).toContain(".ai/skills/next-bundle-optimizer/SKILL.md");

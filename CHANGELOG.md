@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-10-13
 
-- Bundle Vercel's Next.js 16 skills (dev loop, Cache Components, Partial Prefetching, bundle optimizer) and React/frontend skills (React best practices, composition patterns, view transitions, web design guidelines, Vercel optimize), selected by detected stack.
+- Fail before install/update writes when selected vendored skills cannot be read; include the MIT notice in each generated skill copy and stage upstream sync before replacing the previous resources.
+- Bundle Vercel's Next.js 16.3+ skills (dev loop, Cache Components, Partial Prefetching, bundle optimizer) and React/frontend skills (React best practices, composition patterns, view transitions, web design guidelines, Vercel optimize), selected by detected stack.
 - Exclude generated `.ai/skills`, `.claude/skills`, and `.agents/skills` directories from audit and guard scopes.
 
 ## 0.6.0 - 2026-10-04

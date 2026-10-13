@@ -170,16 +170,16 @@ Existing `CLAUDE.md` symlinks to `AGENTS.md` are preserved. Node Boost composes 
 
 ## Bundled upstream skills
 
-node-boost also ships verbatim copies of Vercel's agent skills, so `install` and `update` write them alongside the built-in skills without a network call. Each skill is copied with its references and scripts into `.ai/skills/<name>/` and mirrored like any other skill.
+node-boost also ships verbatim copies of Vercel's agent skills, so `install` and `update` write them alongside the built-in skills without a network call. Each skill is copied with its references, scripts, and a `LICENSE.md` notice into `.ai/skills/<name>/` and mirrored like any other skill.
 
 | Skills | Installed when |
 | --- | --- |
-| `next-dev-loop`, `next-cache-components-optimizer`, `next-cache-components-adoption`, `next-partial-prefetching-optimizer`, `next-partial-prefetching-adoption`, `next-bundle-optimizer` (from [vercel/next.js](https://github.com/vercel/next.js/tree/canary/skills)) | Next.js 16 or newer |
+| `next-dev-loop`, `next-cache-components-optimizer`, `next-cache-components-adoption`, `next-partial-prefetching-optimizer`, `next-partial-prefetching-adoption`, `next-bundle-optimizer` (from [vercel/next.js](https://github.com/vercel/next.js/tree/canary/skills)) | Next.js 16.3 or newer |
 | `vercel-react-best-practices`, `vercel-composition-patterns`, `vercel-react-view-transitions` (from [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)) | React is a dependency |
 | `web-design-guidelines` | Every supported stack |
 | `vercel-optimize` | Next.js and Astro |
 
-Upstream commits are pinned in `resources/vendor/skills/sources.json`; maintainers refresh them with `npm run sync:skills`. Generated skill directories are excluded from `audit` and `guard`. Shadow any file through `.node-boost/**`, or set `features.skills` to `false` to skip skills entirely.
+Upstream commits are pinned in `resources/vendor/skills/sources.json`; maintainers refresh them with `npm run sync:skills`. Sync stages the complete set before replacing the previous one; failed copies leave the previous set intact. A concurrent sync is rejected. If a process is killed, inspect `resources/vendor/.skills-sync-*` for a backup before removing a leftover `resources/vendor/skills.sync-lock`. Generated skill directories are excluded from `audit` and `guard`. Shadow any file through `.node-boost/**`, or set `features.skills` to `false` to skip skills entirely.
 
 ## Hooks
 

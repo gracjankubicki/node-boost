@@ -1,13 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vendorSkills, vendorSkillsRoot, type VendorSkillSource } from "../src/compose/vendor-skills.js";
 
-// Mirrors the files `npx skills add` skips when it installs a skill.
-const excludedFiles = new Set(["metadata.json"]);
-const excludedDirectories = new Set([".git", "__pycache__", "__pypackages__"]);
+import { syncVendorSkills } from "./vendor-skill-sync.js";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const targetRoot = join(repoRoot, vendorSkillsRoot);
@@ -20,24 +18,10 @@ try {
     commits.set(source.repository, checkout(source, workDir));
   }
 
-  await rm(targetRoot, { recursive: true, force: true });
-  for (const skill of vendorSkills) {
-    const from = join(checkoutDir(skill.source, workDir), skill.source.directory, skill.upstreamDirectory);
-    await cp(from, join(targetRoot, skill.name), {
-      recursive: true,
-      filter: (path) => !excludedFiles.has(basename(path)) && !excludedDirectories.has(basename(path)),
-    });
-  }
-
-  const manifest = {
-    skills: vendorSkills.map((skill) => ({
-      name: skill.name,
-      repository: skill.source.repository,
-      path: `${skill.source.directory}/${skill.upstreamDirectory}`,
-      commit: commits.get(skill.source.repository),
-    })),
-  };
-  await writeFile(join(targetRoot, "sources.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await syncVendorSkills(targetRoot, (source) => ({
+    directory: checkoutDir(source, workDir),
+    commit: commits.get(source.repository)!,
+  }));
 } finally {
   await rm(workDir, { recursive: true, force: true });
 }
