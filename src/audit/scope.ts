@@ -11,7 +11,12 @@ import type { AuditFinding, AuditScopeResult } from "./rule.js";
 const execFileAsync = promisify(execFile);
 const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".astro"]);
 const excludedDirectoryNames = new Set(["node_modules", "dist", ".next", ".astro", "coverage"]);
-const defaultExcludes = [...excludedDirectoryNames].flatMap((directory) => [`${directory}/**`, `**/${directory}/**`]);
+// Skill directories are node-boost output and may ship upstream helper scripts.
+const generatedSkillDirectories = new Set([".ai/skills", ".claude/skills", ".agents/skills"]);
+const defaultExcludes = [
+  ...[...excludedDirectoryNames].flatMap((directory) => [`${directory}/**`, `**/${directory}/**`]),
+  ...[...generatedSkillDirectories].map((directory) => `${directory}/**`),
+];
 
 export interface ResolveScopeOptions {
   rootDir: string;
@@ -88,7 +93,7 @@ async function walkFiles(rootDir: string, dir = rootDir): Promise<string[]> {
       const rel = toPosix(relative(rootDir, absolutePath));
 
       if (entry.isDirectory()) {
-        if (excludedDirectoryNames.has(entry.name)) {
+        if (excludedDirectoryNames.has(entry.name) || generatedSkillDirectories.has(rel)) {
           return [];
         }
 

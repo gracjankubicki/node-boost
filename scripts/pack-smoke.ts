@@ -16,6 +16,13 @@ try {
   await run("npm", ["ci"], checkoutRoot);
   await expectMissing(join(checkoutRoot, "dist"));
 
+  // A killed sync may leave these behind in a local package checkout.
+  const interruptedSync = join(checkoutRoot, "resources", "vendor", ".skills-sync-smoke", "backup");
+  const syncLock = join(checkoutRoot, "resources", "vendor", "skills.sync-lock");
+  await mkdir(interruptedSync, { recursive: true });
+  await mkdir(syncLock, { recursive: true });
+  await writeFile(join(interruptedSync, "leftover.md"), "old vendor tree");
+  await writeFile(join(syncLock, "leftover.md"), "sync lock");
   const packOutput = await run("npm", ["pack", "--json", "--silent"], checkoutRoot);
   const jsonStart = packOutput.lastIndexOf("\n[");
   const packResult = JSON.parse(jsonStart === -1 ? packOutput : packOutput.slice(jsonStart + 1)) as Array<{
@@ -33,6 +40,9 @@ try {
     "dist/plugin.d.ts",
     "schema.json",
     "THIRD_PARTY_NOTICES.md",
+    "resources/vendor/VERCEL-LICENSE.md",
+    "resources/vendor/skills/next-dev-loop/SKILL.md",
+    "resources/vendor/skills/vercel-optimize/scripts/scan-codebase.mjs",
     "resources/react/guidelines/core.md",
     "resources/react/skills/react-development/SKILL.md",
     "resources/stacks/astro/guidelines/core.md",
@@ -45,6 +55,9 @@ try {
     if (!packedPaths.has(path)) {
       throw new Error(`Packed tarball is missing ${path}.`);
     }
+  }
+  if ([...packedPaths].some((path) => path.startsWith("resources/vendor/.skills-sync-") || path.startsWith("resources/vendor/skills.sync-lock/"))) {
+    throw new Error("Packed tarball contains interrupted vendor sync artifacts.");
   }
   if ([...packedPaths].some((path) => path.startsWith("tests/") || path.startsWith("implementation-plans/"))) {
     throw new Error("Packed tarball contains development-only files.");
@@ -175,6 +188,13 @@ try {
   await access(join(consumerRoot, ".ai", "node-boost.schema.json"));
   await access(join(consumerRoot, ".ai", "guidelines", "astro", "core.md"));
   await access(join(consumerRoot, ".ai", "guidelines", "frameworks", "react", "core.md"));
+  for (const directory of [".ai", ".claude", ".agents"]) {
+    const notice = await readFile(join(consumerRoot, directory, "skills", "vercel-optimize", "LICENSE.md"), "utf8");
+    if (!notice.includes("Copyright (c) 2025 Vercel, Inc.") || !notice.includes("shall be included in all")) {
+      throw new Error(`Packed consumer is missing the upstream MIT notice in ${directory}.`);
+    }
+    await access(join(consumerRoot, directory, "skills", "vercel-optimize", "scripts", "scan-codebase.mjs"));
+  }
   await access(join(consumerRoot, ".ai", "skills", "astro", "astro-development", "SKILL.md"));
   await access(join(consumerRoot, ".ai", "skills", "frameworks", "react", "development", "SKILL.md"));
 

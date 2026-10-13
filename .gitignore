@@ -8,3 +8,5 @@ implementation-plans/
 .env.*
 !.env.example
 /.idea
+/resources/vendor/.skills-sync-*/
+/resources/vendor/skills.sync-lock/
