@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
 import { promisify } from "node:util";
 
-import { verifyRegistryRelease, type RegistryReadback } from "./registry-readback-lib.js";
+import { registryLookupTimeout, registryReadbackPolicy, verifyRegistryRelease, type RegistryReadback } from "./registry-readback-lib.js";
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
@@ -19,16 +19,18 @@ const packageSpec = `${packageJson.name}@${packageJson.version}`;
 const readback = await verifyRegistryRelease({
   packageName: packageJson.name,
   version: packageJson.version,
-  attempts: 6,
-  delayMs: 2_000,
-  load: async () => {
-    const { stdout } = await execFileAsync("npm", ["view", packageSpec, "--json"]);
+  ...registryReadbackPolicy,
+  load: async (remainingMs) => {
+    const { stdout } = await execFileAsync("npm", [
+      "view", packageSpec, "--json", "--prefer-online", "--fetch-retries=0",
+      "--registry=https://registry.npmjs.org/",
+    ], { timeout: registryLookupTimeout(remainingMs) });
     return JSON.parse(stdout) as RegistryReadback;
   },
   sleep: setTimeout,
   onRetry: (error, attempt) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`registry readback attempt ${attempt} failed: ${message}; retrying\n`);
+    const message = (error instanceof Error ? error.message : String(error)).split("\n")[0];
+    process.stderr.write(`registry readback attempt ${attempt} failed: ${message}; waiting for registry propagation\n`);
   },
 });
 

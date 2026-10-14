@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Wait up to ten minutes for npm registry propagation after publication, with bounded lookups and unchanged metadata checks.
+
 ## 0.7.0 - 2026-10-13
 
 - Fail before install/update writes when selected vendored skills cannot be read; include the MIT notice in each generated skill copy and stage upstream sync before replacing the previous resources.

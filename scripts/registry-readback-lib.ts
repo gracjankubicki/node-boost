@@ -1,3 +1,14 @@
+// npm may accept a publication minutes before registry metadata is visible.
+export const registryReadbackPolicy = { attempts: 61, delayMs: 10_000, timeoutMs: 600_000 };
+
+export function registryLookupTimeout(remainingMs: number): number {
+  const timeout = Math.floor(Math.min(15_000, remainingMs));
+  if (!Number.isFinite(timeout) || timeout < 1) {
+    throw new Error("Registry lookup has no remaining whole millisecond budget.");
+  }
+  return timeout;
+}
+
 export interface RegistryReadback {
   name?: string;
   version?: string;
@@ -15,7 +26,9 @@ interface VerifyRegistryReleaseOptions {
   version: string;
   attempts: number;
   delayMs: number;
-  load: () => Promise<RegistryReadback>;
+  timeoutMs?: number;
+  now?: () => number;
+  load: (remainingMs: number) => Promise<RegistryReadback>;
   sleep: (delayMs: number) => Promise<unknown>;
   onRetry?: (error: unknown, attempt: number) => void;
 }
@@ -25,6 +38,8 @@ export async function verifyRegistryRelease({
   version,
   attempts,
   delayMs,
+  timeoutMs,
+  now = () => performance.now(),
   load,
   sleep,
   onRetry,
@@ -33,26 +48,43 @@ export async function verifyRegistryRelease({
     throw new Error("Registry readback attempts must be a positive integer.");
   }
 
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    throw new Error("Registry readback delay must be a finite nonnegative number.");
+  }
+  if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    throw new Error("Registry readback timeout must be a finite positive number.");
+  }
+
+  const startedAt = now();
+  const budget = timeoutMs ?? Infinity;
+  let attempted = 0;
   const packageSpec = `${packageName}@${version}`;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const remainingBeforeLoad = budget - (now() - startedAt);
+    if (remainingBeforeLoad <= 0) break;
+    attempted = attempt;
     try {
-      const readback = await load();
+      const readback = await load(remainingBeforeLoad);
+      if (now() - startedAt >= budget) {
+        throw new Error(`Registry readback for ${packageSpec} exceeded its deadline.`);
+      }
       validateReadback(readback, packageName, version, packageSpec);
       return readback;
     } catch (error) {
       lastError = error;
-      if (attempt === attempts) {
+      const remaining = budget - (now() - startedAt);
+      if (attempt === attempts || remaining <= 0) {
         break;
       }
       onRetry?.(error, attempt);
-      await sleep(delayMs);
+      await sleep(Math.min(delayMs, remaining));
     }
   }
 
   throw new Error(
-    `Registry readback for ${packageSpec} did not become consistent after ${attempts} attempts.`,
+    `Registry readback for ${packageSpec} did not become consistent after ${attempted} attempts${timeoutMs === undefined ? "" : ` within ${timeoutMs}ms`}.`,
     { cause: lastError },
   );
 }

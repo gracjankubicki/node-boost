@@ -259,6 +259,10 @@ npx node-boost update
 
 Project overrides live under `.node-boost/**` and shadow built-in resources during `install` and `update`.
 
+After npm accepts a publication, registry metadata can take several minutes to appear. `npm run release:readback` waits up to ten minutes for the expected name, version, integrity and provenance, with each lookup limited to fifteen seconds. It fails if the metadata stays unavailable or incomplete; a readback failure does not mean publication should be repeated.
+
+Run the `Verify existing npm release` workflow from the branch containing the fix to check the version in that branch's `package.json` without publishing again. For this fix that version is 0.7.0. Re-running the original publish workflow still checks out the old release tag and must not be used to repeat publication.
+
 Release candidates are verified from a clean source checkout with `npm run smoke:pack`. The smoke builds through `prepack`, installs the resulting tarball in a temporary consumer, and runs CLI install/doctor from the packed binary.
 
 ## Content-only plugins
