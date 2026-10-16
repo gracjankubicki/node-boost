@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -135,6 +135,21 @@ describe("vendor skill corrections", () => {
     const original = (await vi.importActual<typeof fs>("node:fs/promises")).rename;
     vi.mocked(fs.rename).mockImplementationOnce(original).mockRejectedValueOnce(new Error("Publication denied"));
     await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }))).rejects.toThrow("Publication denied");
+    expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
+  });
+  it.each(["symlink", "LICENSE.md"])("rejects an upstream %s without touching the current tree", async (hazard) => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    await mkdir(target);
+    await writeFile(join(target, "old.md"), "previous tree");
+    const upstream = await sources();
+    const skill = vendorSkills[0];
+    const dir = join(upstream, skill.source.directory, skill.upstreamDirectory);
+    // A junction needs no elevated rights on Windows; the type is ignored elsewhere.
+    if (hazard === "symlink") await symlink(join(dir, "references"), join(dir, "linked"), "junction");
+    else await writeFile(join(dir, "LICENSE.md"), "upstream notice");
+    await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" })))
+      .rejects.toThrow(hazard === "symlink" ? "must not contain symlinks" : "LICENSE.md conflicts");
     expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
   });
   it("rejects concurrent sync without touching the current tree", async () => {
