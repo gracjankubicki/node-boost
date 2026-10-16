@@ -21,17 +21,18 @@ export async function syncVendorSkills(
     const staged = join(transaction, "staged");
     const backup = join(transaction, "backup");
     const records = [];
-    const checkedCheckouts = new Set<string>();
+    const checkedDirectories = new Set<string>();
     for (const skill of vendorSkills) {
       const source = resolveSource(skill.source);
-      const from = join(source.directory, skill.source.directory, skill.upstreamDirectory);
+      const skillsDirectory = join(source.directory, skill.source.directory);
+      const from = join(skillsDirectory, skill.upstreamDirectory);
       // Fail before publication if an upstream skill was removed or moved.
       const entry = await readFile(join(from, "SKILL.md"), "utf8");
       if (!/^---\r?\n[\s\S]*?\r?\n---/.test(entry)) throw new Error(`Invalid SKILL.md: ${from}`);
       if (existsSync(join(from, "LICENSE.md"))) throw new Error(`Upstream LICENSE.md conflicts with the generated notice: ${from}`);
-      if (!checkedCheckouts.has(source.directory)) {
-        await assertLinksStayInside(source.directory);
-        checkedCheckouts.add(source.directory);
+      if (!checkedDirectories.has(skillsDirectory)) {
+        await assertLinksStayInside(skillsDirectory, source.directory);
+        checkedDirectories.add(skillsDirectory);
       }
       // Dereference so consumers get plain files; broken links and cycles make cp() fail here.
       await cp(from, join(staged, skill.name), {
@@ -71,14 +72,21 @@ export async function syncVendorSkills(
   }
 }
 
-// Every link cp() may follow lives in the checkout, so checking them all also covers
-// links nested in linked directories. Never publish files from the maintainer's machine.
-async function assertLinksStayInside(checkout: string): Promise<void> {
+// The sparse checkout only materialises the skills directory, so every link cp() may follow
+// lives there; checking them all also covers links nested in linked directories. Never
+// publish files from the maintainer's machine. Links into paths outside the sparse checkout
+// (e.g. next.js's root readme.md) are broken; skip them, cp() fails if a skill uses one.
+async function assertLinksStayInside(directory: string, checkout: string): Promise<void> {
   const root = await realpath(checkout);
-  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+  for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) {
     if (!entry.isSymbolicLink()) continue;
     const path = join(entry.parentPath, entry.name);
-    const fromRoot = relative(root, await realpath(path));
+    const target = await realpath(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!target) continue;
+    const fromRoot = relative(root, target);
     if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
       throw new Error(`Vendored skill symlink points outside the upstream checkout: ${path}`);
     }

@@ -151,6 +151,15 @@ describe("vendor skill corrections", () => {
     expect((await lstat(join(target, skill.name, "shared"))).isSymbolicLink()).toBe(false);
     expect(await readFile(join(target, skill.name, "shared/note.md"), "utf8")).toBe("shared note");
   });
+  it("ignores links outside the skills directory that the sparse checkout leaves broken", async () => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    const upstream = await sources();
+    // Mirrors next.js's root readme.md -> packages/next/README.md, absent from a sparse checkout.
+    await symlink(join(upstream, "packages", "next"), join(upstream, "readme"), "junction");
+    await syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }));
+    expect(await readFile(join(target, vendorSkills[0].name, "SKILL.md"), "utf8")).toContain("description: fixture");
+  });
   it.each([
     ["an upstream LICENSE.md", "LICENSE.md conflicts"],
     ["a symlink outside the checkout", "points outside the upstream checkout"],
