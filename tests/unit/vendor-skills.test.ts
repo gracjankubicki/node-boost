@@ -1,11 +1,11 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { composeVendorSkills, vendorSkills, vendorSkillsRoot } from "../../src/compose/vendor-skills.js";
-import { detectStack } from "../../src/detect/stack.js";
-import { runInstall, runUpdate } from "../../src/install/orchestrator.js";
+import { detectStack } from "../../src/index.js";
+import { runInstall, runUpdate } from "../../src/index.js";
 import { syncVendorSkills } from "../../scripts/vendor-skill-sync.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -135,6 +135,79 @@ describe("vendor skill corrections", () => {
     const original = (await vi.importActual<typeof fs>("node:fs/promises")).rename;
     vi.mocked(fs.rename).mockImplementationOnce(original).mockRejectedValueOnce(new Error("Publication denied"));
     await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }))).rejects.toThrow("Publication denied");
+    expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
+  });
+  // Junctions need no elevated rights on Windows; the type is ignored elsewhere.
+  it("copies symlinked content that resolves inside the upstream checkout", async () => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    const upstream = await sources();
+    const skill = vendorSkills[0];
+    const shared = join(upstream, skill.source.directory, "_shared");
+    await mkdir(shared);
+    await writeFile(join(shared, "note.md"), "shared note");
+    await symlink(shared, join(upstream, skill.source.directory, skill.upstreamDirectory, "shared"), "junction");
+    await syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }));
+    expect((await lstat(join(target, skill.name, "shared"))).isSymbolicLink()).toBe(false);
+    expect(await readFile(join(target, skill.name, "shared/note.md"), "utf8")).toBe("shared note");
+  });
+  it.each([true, false])("validates nested links reached outside the skills directory (escape=%s)", async (escape) => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    await mkdir(target);
+    await writeFile(join(target, "old.md"), "previous tree");
+    await writeFile(join(target, "sources.json"), "previous manifest");
+    const upstream = await sources();
+    const skill = vendorSkills[0];
+    // .git is materialised even in a sparse checkout, but is outside the skills scan.
+    const shared = join(upstream, ".git", "shared");
+    const content = escape ? await temporary() : join(upstream, ".git", "content");
+    await mkdir(shared, { recursive: true });
+    await mkdir(content, { recursive: true });
+    await writeFile(join(content, "note.md"), "nested note");
+    await symlink(content, join(shared, "nested"), "junction");
+    await symlink(shared, join(upstream, skill.source.directory, skill.upstreamDirectory, "shared"), "junction");
+    const sync = syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }));
+    if (escape) {
+      await expect(sync).rejects.toThrow("points outside the upstream checkout");
+      expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
+      expect(await readFile(join(target, "sources.json"), "utf8")).toBe("previous manifest");
+    } else {
+      await sync;
+      const copied = join(target, skill.name, "shared", "nested");
+      expect((await lstat(copied)).isSymbolicLink()).toBe(false);
+      expect((await lstat(join(copied, "note.md"))).isFile()).toBe(true);
+      expect(await readFile(join(copied, "note.md"), "utf8")).toBe("nested note");
+    }
+  });
+  it("ignores links outside the skills directory that the sparse checkout leaves broken", async () => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    const upstream = await sources();
+    // Mirrors next.js's root readme.md -> packages/next/README.md, absent from a sparse checkout.
+    await symlink(join(upstream, "packages", "next"), join(upstream, "readme"), "junction");
+    await syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }));
+    expect(await readFile(join(target, vendorSkills[0].name, "SKILL.md"), "utf8")).toContain("description: fixture");
+  });
+  it.each([
+    ["an upstream LICENSE.md", "LICENSE.md conflicts"],
+    ["a symlink outside the checkout", "points outside the upstream checkout"],
+    ["a broken symlink", "ENOENT"],
+    // The error code for a cycle is platform-specific; failing before publication is what matters.
+    ["a symlink cycle", undefined],
+  ])("rejects %s without touching the current tree", async (hazard, message) => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    await mkdir(target);
+    await writeFile(join(target, "old.md"), "previous tree");
+    const upstream = await sources();
+    const skill = vendorSkills[0];
+    const dir = join(upstream, skill.source.directory, skill.upstreamDirectory);
+    if (hazard === "an upstream LICENSE.md") await writeFile(join(dir, "LICENSE.md"), "upstream notice");
+    if (hazard === "a symlink outside the checkout") await symlink(await temporary(), join(dir, "linked"), "junction");
+    if (hazard === "a broken symlink") await symlink(join(upstream, "missing"), join(dir, "linked"), "junction");
+    if (hazard === "a symlink cycle") await symlink(dir, join(dir, "references", "loop"), "junction");
+    await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }))).rejects.toThrow(message);
     expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
   });
   it("rejects concurrent sync without touching the current tree", async () => {
