@@ -1,5 +1,6 @@
-import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { vendorSkills, type VendorSkillSource } from "../src/compose/vendor-skills.js";
 
 const excludedFiles = new Set(["metadata.json"]);
@@ -20,15 +21,22 @@ export async function syncVendorSkills(
     const staged = join(transaction, "staged");
     const backup = join(transaction, "backup");
     const records = [];
+    const checkedCheckouts = new Set<string>();
     for (const skill of vendorSkills) {
       const source = resolveSource(skill.source);
       const from = join(source.directory, skill.source.directory, skill.upstreamDirectory);
       // Fail before publication if an upstream skill was removed or moved.
       const entry = await readFile(join(from, "SKILL.md"), "utf8");
       if (!/^---\r?\n[\s\S]*?\r?\n---/.test(entry)) throw new Error(`Invalid SKILL.md: ${from}`);
-      await assertPublishable(from);
+      if (existsSync(join(from, "LICENSE.md"))) throw new Error(`Upstream LICENSE.md conflicts with the generated notice: ${from}`);
+      if (!checkedCheckouts.has(source.directory)) {
+        await assertLinksStayInside(source.directory);
+        checkedCheckouts.add(source.directory);
+      }
+      // Dereference so consumers get plain files; broken links and cycles make cp() fail here.
       await cp(from, join(staged, skill.name), {
         recursive: true,
+        dereference: true,
         filter: (path) => !excludedFiles.has(basename(path)) && !excludedDirectories.has(basename(path)),
       });
       records.push({ name: skill.name, repository: skill.source.repository,
@@ -63,14 +71,16 @@ export async function syncVendorSkills(
   }
 }
 
-// cp() rewrites relative symlinks to absolute paths into the deleted checkout, and
-// composeVendorSkills() rejects a skill-level LICENSE.md, so fail before publication.
-async function assertPublishable(from: string): Promise<void> {
-  for (const entry of await readdir(from, { recursive: true, withFileTypes: true })) {
+// Every link cp() may follow lives in the checkout, so checking them all also covers
+// links nested in linked directories. Never publish files from the maintainer's machine.
+async function assertLinksStayInside(checkout: string): Promise<void> {
+  const root = await realpath(checkout);
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isSymbolicLink()) continue;
     const path = join(entry.parentPath, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Vendored skills must not contain symlinks: ${path}`);
-    if (entry.parentPath === from && entry.name === "LICENSE.md") {
-      throw new Error(`Upstream LICENSE.md conflicts with the generated notice: ${path}`);
+    const fromRoot = relative(root, await realpath(path));
+    if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+      throw new Error(`Vendored skill symlink points outside the upstream checkout: ${path}`);
     }
   }
 }

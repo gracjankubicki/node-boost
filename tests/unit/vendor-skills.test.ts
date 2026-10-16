@@ -1,11 +1,11 @@
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { composeVendorSkills, vendorSkills, vendorSkillsRoot } from "../../src/compose/vendor-skills.js";
-import { detectStack } from "../../src/detect/stack.js";
-import { runInstall, runUpdate } from "../../src/install/orchestrator.js";
+import { detectStack } from "../../src/index.js";
+import { runInstall, runUpdate } from "../../src/index.js";
 import { syncVendorSkills } from "../../scripts/vendor-skill-sync.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -137,7 +137,27 @@ describe("vendor skill corrections", () => {
     await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }))).rejects.toThrow("Publication denied");
     expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
   });
-  it.each(["symlink", "LICENSE.md"])("rejects an upstream %s without touching the current tree", async (hazard) => {
+  // Junctions need no elevated rights on Windows; the type is ignored elsewhere.
+  it("copies symlinked content that resolves inside the upstream checkout", async () => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    const upstream = await sources();
+    const skill = vendorSkills[0];
+    const shared = join(upstream, skill.source.directory, "_shared");
+    await mkdir(shared);
+    await writeFile(join(shared, "note.md"), "shared note");
+    await symlink(shared, join(upstream, skill.source.directory, skill.upstreamDirectory, "shared"), "junction");
+    await syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }));
+    expect((await lstat(join(target, skill.name, "shared"))).isSymbolicLink()).toBe(false);
+    expect(await readFile(join(target, skill.name, "shared/note.md"), "utf8")).toBe("shared note");
+  });
+  it.each([
+    ["an upstream LICENSE.md", "LICENSE.md conflicts"],
+    ["a symlink outside the checkout", "points outside the upstream checkout"],
+    ["a broken symlink", "ENOENT"],
+    // The error code for a cycle is platform-specific; failing before publication is what matters.
+    ["a symlink cycle", undefined],
+  ])("rejects %s without touching the current tree", async (hazard, message) => {
     const root = await temporary();
     const target = join(root, "skills");
     await mkdir(target);
@@ -145,11 +165,11 @@ describe("vendor skill corrections", () => {
     const upstream = await sources();
     const skill = vendorSkills[0];
     const dir = join(upstream, skill.source.directory, skill.upstreamDirectory);
-    // A junction needs no elevated rights on Windows; the type is ignored elsewhere.
-    if (hazard === "symlink") await symlink(join(dir, "references"), join(dir, "linked"), "junction");
-    else await writeFile(join(dir, "LICENSE.md"), "upstream notice");
-    await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" })))
-      .rejects.toThrow(hazard === "symlink" ? "must not contain symlinks" : "LICENSE.md conflicts");
+    if (hazard === "an upstream LICENSE.md") await writeFile(join(dir, "LICENSE.md"), "upstream notice");
+    if (hazard === "a symlink outside the checkout") await symlink(await temporary(), join(dir, "linked"), "junction");
+    if (hazard === "a broken symlink") await symlink(join(upstream, "missing"), join(dir, "linked"), "junction");
+    if (hazard === "a symlink cycle") await symlink(dir, join(dir, "references", "loop"), "junction");
+    await expect(syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }))).rejects.toThrow(message);
     expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
   });
   it("rejects concurrent sync without touching the current tree", async () => {
