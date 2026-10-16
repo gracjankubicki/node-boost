@@ -1,6 +1,6 @@
 {
   "name": "@node-boost/node-boost",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "CLI and MCP guidance layer for Node, Astro, and React projects.",
   "type": "module",
   "license": "MIT",

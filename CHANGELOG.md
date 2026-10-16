@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.7.1 - 2026-10-16
 
+- Copy safe upstream symlinks as regular files during vendor skill sync and reject upstream LICENSE.md conflicts before replacing resources.
 - Validate nested symlink targets during vendor skill copying so paths outside the upstream checkout cannot enter the vendored tree.
 - Wait up to ten minutes for npm registry propagation after publication, with bounded lookups and unchanged metadata checks.
 
