@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Validate nested symlink targets during vendor skill copying so paths outside the upstream checkout cannot enter the vendored tree.
 - Wait up to ten minutes for npm registry propagation after publication, with bounded lookups and unchanged metadata checks.
 
 ## 0.7.0 - 2026-10-13

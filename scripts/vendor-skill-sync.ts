@@ -34,11 +34,17 @@ export async function syncVendorSkills(
         await assertLinksStayInside(skillsDirectory, source.directory);
         checkedDirectories.add(skillsDirectory);
       }
+      const checkoutRoot = await realpath(source.directory);
       // Dereference so consumers get plain files; broken links and cycles make cp() fail here.
       await cp(from, join(staged, skill.name), {
         recursive: true,
         dereference: true,
-        filter: (path) => !excludedFiles.has(basename(path)) && !excludedDirectories.has(basename(path)),
+        filter: async (path) => {
+          if (excludedFiles.has(basename(path)) || excludedDirectories.has(basename(path))) return false;
+          // cp follows linked directories that the initial readdir scan does not visit.
+          assertInsideCheckout(await realpath(path), checkoutRoot, path);
+          return true;
+        },
       });
       records.push({ name: skill.name, repository: skill.source.repository,
         path: `${skill.source.directory}/${skill.upstreamDirectory}`, commit: source.commit });
@@ -72,10 +78,8 @@ export async function syncVendorSkills(
   }
 }
 
-// The sparse checkout only materialises the skills directory, so every link cp() may follow
-// lives there; checking them all also covers links nested in linked directories. Never
-// publish files from the maintainer's machine. Links into paths outside the sparse checkout
-// (e.g. next.js's root readme.md) are broken; skip them, cp() fails if a skill uses one.
+// Preflight the sparse skills directory. The cp filter also checks paths reached through
+// linked directories. Ignore unrelated broken links; cp fails if a copied skill uses one.
 async function assertLinksStayInside(directory: string, checkout: string): Promise<void> {
   const root = await realpath(checkout);
   for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) {
@@ -86,9 +90,13 @@ async function assertLinksStayInside(directory: string, checkout: string): Promi
       throw error;
     });
     if (!target) continue;
-    const fromRoot = relative(root, target);
-    if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-      throw new Error(`Vendored skill symlink points outside the upstream checkout: ${path}`);
-    }
+    assertInsideCheckout(target, root, path);
+  }
+}
+
+function assertInsideCheckout(target: string, root: string, path: string): void {
+  const fromRoot = relative(root, target);
+  if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    throw new Error(`Vendored skill symlink points outside the upstream checkout: ${path}`);
   }
 }

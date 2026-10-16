@@ -151,6 +151,35 @@ describe("vendor skill corrections", () => {
     expect((await lstat(join(target, skill.name, "shared"))).isSymbolicLink()).toBe(false);
     expect(await readFile(join(target, skill.name, "shared/note.md"), "utf8")).toBe("shared note");
   });
+  it.each([true, false])("validates nested links reached outside the skills directory (escape=%s)", async (escape) => {
+    const root = await temporary();
+    const target = join(root, "skills");
+    await mkdir(target);
+    await writeFile(join(target, "old.md"), "previous tree");
+    await writeFile(join(target, "sources.json"), "previous manifest");
+    const upstream = await sources();
+    const skill = vendorSkills[0];
+    // .git is materialised even in a sparse checkout, but is outside the skills scan.
+    const shared = join(upstream, ".git", "shared");
+    const content = escape ? await temporary() : join(upstream, ".git", "content");
+    await mkdir(shared, { recursive: true });
+    await mkdir(content, { recursive: true });
+    await writeFile(join(content, "note.md"), "nested note");
+    await symlink(content, join(shared, "nested"), "junction");
+    await symlink(shared, join(upstream, skill.source.directory, skill.upstreamDirectory, "shared"), "junction");
+    const sync = syncVendorSkills(target, () => ({ directory: upstream, commit: "fixture-sha" }));
+    if (escape) {
+      await expect(sync).rejects.toThrow("points outside the upstream checkout");
+      expect(await readFile(join(target, "old.md"), "utf8")).toBe("previous tree");
+      expect(await readFile(join(target, "sources.json"), "utf8")).toBe("previous manifest");
+    } else {
+      await sync;
+      const copied = join(target, skill.name, "shared", "nested");
+      expect((await lstat(copied)).isSymbolicLink()).toBe(false);
+      expect((await lstat(join(copied, "note.md"))).isFile()).toBe(true);
+      expect(await readFile(join(copied, "note.md"), "utf8")).toBe("nested note");
+    }
+  });
   it("ignores links outside the skills directory that the sparse checkout leaves broken", async () => {
     const root = await temporary();
     const target = join(root, "skills");
